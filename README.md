@@ -1,6 +1,13 @@
 #   ---------- ItemManager: ----------
 Editor for better editing of spr and dat images and files. 
 
+
+<img width="1919" height="1038" alt="Screenshot_2" src="https://github.com/user-attachments/assets/8f7b1efe-0498-4f8f-a239-d072d3f8b1f2" />
+
+
+<img width="1919" height="1037" alt="Screenshot_3" src="https://github.com/user-attachments/assets/95c430f5-badc-40a3-be68-cb948c9bbd90" />
+
+
 features:
 
 -Image Enhancer
