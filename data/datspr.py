@@ -7,8 +7,6 @@ import os
 from PIL import Image, ImageTk
 import shutil
 
-
-
 METADATA_FLAGS = {
     0x00: ('Ground', '<H'), 0x01: ('GroundBorder', ''), 0x02: ('OnBottom', ''),
     0x03: ('OnTop', ''), 0x04: ('Container', ''), 0x05: ('Stackable', ''),
@@ -28,9 +26,6 @@ METADATA_FLAGS = {
 REVERSE_METADATA_FLAGS = {info[0]: flag for flag, info in METADATA_FLAGS.items()}
 LAST_FLAG = 0xFF
 
-# ---------------------------
-# Conversores de cor (índice 0–215 e legado 16-bit)
-# ---------------------------
 def ob_index_to_rgb(idx):
     idx = max(0, min(215, int(idx)))
     r = (idx % 6) * 51
@@ -222,10 +217,6 @@ class SprReader:
             self._f = None
 
     def get_sprite(self, sprite_id):
-        """
-        Tenta decodificar a sprite testando múltiplas variantes de cabeçalho e formato de cor.
-        Ideal para SPRs customizados (OTClient/Mehah) onde o formato exato varia.
-        """
         if not self._f or sprite_id <= 0 or sprite_id > self.sprite_count:
             return None
         
@@ -233,7 +224,6 @@ class SprReader:
         if offset == 0:
             return None
             
-        # 1. Calcular tamanho do bloco
         next_offset = 0
         for i in range(sprite_id, self.sprite_count):
             if self.offsets[i] != 0:
@@ -244,19 +234,21 @@ class SprReader:
         file_size = self._f.tell()
         size = (next_offset - offset) if (next_offset > offset) else (file_size - offset)
         
-        if size <= 4: 
-            return None
+        if size <= 0: return None
 
         self._f.seek(offset)
         raw_data = self._f.read(size)
 
+        # 1. Tenta decodificar como Padrão (32x32 sem header W/H) - Mais comum em 10.98 oficial
+        img = self._decode_standard(raw_data)
+        if img: return img
+
+        # 2. Se falhar, tenta variantes Extended (com header W/H)
         attempts = [
-            (0, 4), # RGBA Direto
-            (2, 4), # RGBA com Header de Tamanho (2 bytes)
-            (0, 3), # RGB Direto
-            (2, 3), # RGB com Header de Tamanho
-            (3, 3), # RGB com ColorKey + Tamanho (Raro)
-            (1, 3)  # RGB com apenas ColorKey (Legacy 7.x-8.x)
+            (0, 4), # RGBA Direto com W/H
+            (2, 4), # RGBA + SizeHeader + W/H
+            (0, 3), # RGB Direto com W/H
+            (2, 3), # RGB + SizeHeader + W/H
         ]
 
         for skip, bpp in attempts:
@@ -265,6 +257,62 @@ class SprReader:
                 return img
         
         return None
+
+    def _decode_standard(self, data):
+        """Decodifica sprite padrão Tibia (32x32 fixo, sem header de tamanho)."""
+        try:
+            w, h = 32, 32
+            total_pixels = 1024
+            img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+            pixels = img.load()
+            
+            p = 0
+            x = 0
+            y = 0
+            drawn = 0
+            
+            # Proteção contra arquivos muito pequenos (ex: apenas header de tamanho)
+            if len(data) < 2: return None
+
+            # O loop de leitura RLE padrão
+            while p < len(data) and drawn < total_pixels:
+                if p + 4 > len(data): break
+                
+                transparent = struct.unpack_from('<H', data, p)[0]
+                colored = struct.unpack_from('<H', data, p + 2)[0]
+                p += 4
+                
+                # Avança transparentes
+                drawn += transparent
+                current_pos = y * w + x + transparent
+                x = current_pos % w
+                y = current_pos // w
+
+                if p + (colored * 3) > len(data): break
+                
+                for _ in range(colored):
+                    if y >= h: break
+                    r = data[p]
+                    g = data[p+1]
+                    b = data[p+2]
+                    pixels[x, y] = (r, g, b, 255)
+                    p += 3
+                    
+                    x += 1
+                    drawn += 1
+                    if x >= w:
+                        x = 0
+                        y += 1
+            
+            # Se desenhou algo coerente, retornamos a imagem
+            if drawn >= total_pixels or (p >= len(data) and drawn > 0):
+                return img
+            return None
+        except Exception:
+            return None
+
+
+
 
     def _decode_variant(self, data, skip_bytes, bpp):
         """
@@ -646,68 +694,85 @@ class DatSprTab(ctk.CTkFrame):
             )
 
     def delete_ids(self):
-        """Remove IDs. Prioridade se campo vazio: Selecionado > Último da Lista."""
         if not self.editor:
             messagebox.showwarning("Aviso", "Carregue um arquivo .dat primeiro.")
             return
-        
+
         id_string = self.id_operation_entry.get().strip()
         ids_to_delete = []
 
         if not id_string:
-
             if self.current_ids:
                 ids_to_delete = self.current_ids
-
             else:
                 last_id = self.editor.counts['items']
-                if last_id < 100: 
-                    return 
+                if last_id < 100:
+                    return
                 ids_to_delete = [last_id]
         else:
-
             ids_to_delete = self.parse_ids(id_string)
-        
+
         if not ids_to_delete:
             return
-        
+
         confirm = messagebox.askyesno(
             "Confirmar Exclusão",
-            f"Isso irá remover {len(ids_to_delete)} itens (IDs: {min(ids_to_delete)} até {max(ids_to_delete)}).\n"
-            "ATENÇÃO: Isso vai REINDEXAR (mover) todos os IDs posteriores.\n"
+            f"Isso irá modificar {len(ids_to_delete)} itens.\n"
+            "Os IDs no meio da lista serão esvaziados.\n"
+            "Os IDs no final da lista serão removidos.\n"
             "Deseja continuar?"
         )
-        
+
         if not confirm:
             return
 
-        delete_set = set(ids_to_delete)
-        new_items = {}
-        current_new_id = 100
-        
-        old_max = self.editor.counts['items']
-        
-        for old_id in range(100, old_max + 1):
-            if old_id in self.editor.things['items']:
-                if old_id not in delete_set:
-                    new_items[current_new_id] = self.editor.things['items'][old_id]
-                    current_new_id += 1
+        # Ordena os IDs em ordem decrescente para facilitar a exclusão do final da lista
+        ids_to_delete.sort(reverse=True)
 
-        self.editor.things['items'] = new_items
-        new_count = current_new_id - 1
-        deleted_count = self.editor.counts['items'] - new_count
-        self.editor.counts['items'] = new_count
+        deleted_count = 0
+        emptied_count = 0
+        
+        last_item_id = self.editor.counts['items']
+        ids_to_delete_set = set(ids_to_delete)
+        
+        # Remove os itens do final da lista
+        while last_item_id in ids_to_delete_set:
+            if last_item_id in self.editor.things['items']:
+                del self.editor.things['items'][last_item_id]
+                ids_to_delete_set.remove(last_item_id)
+                deleted_count += 1
+            last_item_id -= 1
+            
+        self.editor.counts['items'] = last_item_id
+        
+        # Esvazia os outros itens (que não estão no final)
+        for item_id in ids_to_delete_set:
+            if item_id in self.editor.things['items']:
+                # Cria um item em branco com uma textura mínima de 1x1
+                minimal_texture = b'\x01\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00'
+                self.editor.things['items'][item_id] = {
+                    "props": OrderedDict(),
+                    "texture_bytes": minimal_texture
+                }
+                emptied_count += 1
+                
+        status_message = ""
+        if emptied_count > 0:
+            status_message += f"{emptied_count} IDs foram esvaziados. "
+        if deleted_count > 0:
+            status_message += f"{deleted_count} IDs do final da lista foram removidos."
 
         self.status_label.configure(
-            text=f"{len(ids_to_delete)} itens removidos. IDs reindexados até {new_count}.",
+            text=status_message,
             text_color="orange"
         )
-        
-        self.current_ids = [] 
+
+        self.current_ids = []
         self.refresh_id_list()
         self.id_operation_entry.delete(0, "end")
         self.id_entry.delete(0, "end")
         self.clear_preview()
+
 
     def update_color_preview(self, attr_name):
         """Atualiza o preview de cor quando o usuário digita."""
