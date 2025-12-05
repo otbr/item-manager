@@ -25,7 +25,10 @@ features:
 - Spr/Dat Editor
   - Edit Id
   - Flags Adjust
+  - Id Multi Edit
   
+- OTB Reload
+  - in Devolopment.
 
 Manipulating the dat and spr files is only 
 possible for versions 10.98; 
@@ -52,11 +55,13 @@ https://downloads.ots.me/data/tibia-clients/dat_and_spr/1098.zip
 Otclient Redemption:
 https://github.com/mehah/otclient/releases
 
+- Client-side:
+
 Otclient V8:
 https://github.com/OTCv8/otclientv8
 
 
-Server-side:
+- Server-side:
 
 Black-Tek:
 https://github.com/Black-Tek/BlackTek-Server/releases
