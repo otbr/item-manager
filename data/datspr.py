@@ -6,6 +6,7 @@ import threading
 import os
 from PIL import Image, ImageTk
 import shutil
+import atexit
 
 METADATA_FLAGS = {
     0x00: ('Ground', '<H'), 0x01: ('GroundBorder', ''), 0x02: ('OnBottom', ''),
@@ -142,11 +143,11 @@ class DatEditor:
                     if fmt:
                         f.write(struct.pack(fmt, *data))
                     else:
-                        # market raw
+                 
                         f.write(data)
         f.write(struct.pack('<B', LAST_FLAG))
 
-    # util: extrai lista de sprite IDs a partir do texture_bytes (levando em conta header)
+
     @staticmethod
     def extract_sprite_ids_from_texture_bytes(texture_bytes):
         if not texture_bytes or len(texture_bytes) < 2:
@@ -156,14 +157,14 @@ class DatEditor:
             width, height = struct.unpack_from('<BB', texture_bytes, offset)
             offset += 2
             if width > 1 or height > 1:
-                offset += 1  # skip byte
+                offset += 1  
             layers, px, py, pz, frames = struct.unpack_from('<BBBBB', texture_bytes, offset)
             offset += 5
             total_sprites = width * height * px * py * pz * layers * frames
-            # skip anim block if present
+   
             anim_offset = 0
             if frames > 1:
-                # approximate: 1 + 4 + 1 + (frames * 8)
+
                 anim_offset = 1 + 4 + 1 + (frames * 8)
             offset += anim_offset
             sprite_ids = []
@@ -179,14 +180,6 @@ class DatEditor:
             return []
 
 class SprReader:
-    """
-    Leitor 'best-effort' para Tibia.spr 10.98:
-    - Lê header (signature, count, offsets)
-    - Para cada sprite tenta:
-      1) interpretar como bloco não-comprimido (width,height + raw RGBA 32-bit)
-      2) se falhar, tenta decoder RLE com pares (transparent u16, colored u16) e cores 3 bytes (RGB)
-    Retorna PIL.Image ou None se não conseguiu.
-    """
     def __init__(self, spr_path):
         self.spr_path = spr_path
         self.signature = 0
@@ -200,9 +193,8 @@ class SprReader:
         f.seek(0)
         header = f.read(8)
         if len(header) < 8:
-            raise ValueError("Arquivo SPR inválido ou truncado.")
+            raise ValueError("Invalid or truncated SPR file.")
         self.signature, self.sprite_count = struct.unpack('<II', header)
-        # offsets table (sprite_count entries)
         self.offsets = []
         for _ in range(self.sprite_count):
             data = f.read(4)
@@ -216,13 +208,15 @@ class SprReader:
             self._f.close()
             self._f = None
 
+
     def get_sprite(self, sprite_id):
         if not self._f or sprite_id <= 0 or sprite_id > self.sprite_count:
             return None
-        
+            
+        print("getsprite called with", sprite_id, "spritecount", self.sprite_count)         
+       
         offset = self.offsets[sprite_id - 1]
-        if offset == 0:
-            return None
+        if offset == 0: return None
             
         next_offset = 0
         for i in range(sprite_id, self.sprite_count):
@@ -239,30 +233,77 @@ class SprReader:
         self._f.seek(offset)
         raw_data = self._f.read(size)
 
-        # 1. Tenta decodificar como Padrão (32x32 sem header W/H) - Mais comum em 10.98 oficial
-        img = self._decode_standard(raw_data)
-        if img: return img
-
-        # 2. Se falhar, tenta variantes Extended (com header W/H)
-        attempts = [
-            (0, 4), # RGBA Direto com W/H
-            (2, 4), # RGBA + SizeHeader + W/H
-            (0, 3), # RGB Direto com W/H
-            (2, 3), # RGB + SizeHeader + W/H
-        ]
-
-        for skip, bpp in attempts:
-            img = self._decode_variant(raw_data, skip, bpp)
-            if img:
-                return img
+        start_idx = 0
+        if len(raw_data) >= 3 and raw_data[0] == 0xFF and raw_data[1] == 0x00 and raw_data[2] == 0xFF:
+            start_idx = 3
         
-        return None
+        if start_idx + 2 <= len(raw_data):
+            data_size = struct.unpack_from('<H', raw_data, start_idx)[0]
 
-    def _decode_standard(self, data):
-        """Decodifica sprite padrão Tibia (32x32 fixo, sem header de tamanho)."""
+            start_idx += 2
+            
+        sprite_data = raw_data[start_idx:]
+        
+        return self._decode_rgb_rle(sprite_data)
+
+    def _decode_rgb_rle(self, data):
         try:
             w, h = 32, 32
             total_pixels = 1024
+            img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+            pixels = img.load()
+
+            p = 0
+            x = 0
+            y = 0
+            drawn = 0
+
+            while p < len(data) and drawn < total_pixels:
+
+                if p + 4 > len(data): break
+                
+                transparent = struct.unpack_from('<H', data, p)[0]
+                colored = struct.unpack_from('<H', data, p + 2)[0]
+                p += 4
+
+
+                drawn += transparent
+
+                current_pos = y * w + x + transparent
+                y = current_pos // w
+                x = current_pos % w
+
+                if p + colored * 3 > len(data): break
+
+                for _ in range(colored):
+                    if y >= h: break
+                    
+                    r = data[p]
+                    g = data[p+1]
+                    b = data[p+2]
+                    p += 3
+
+                    pixels[x, y] = (r, g, b, 255)
+
+                    x += 1
+                    drawn += 1
+                    if x >= w:
+                        x = 0
+                        y += 1
+
+            return img
+        except Exception as e:
+            print(f"Erro decode RLE: {e}")
+            return None
+        
+        
+        
+
+    def _decode_standard(self, data):
+        try:
+            w, h = 32, 32
+            total_pixels = 1024
+            
             img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
             pixels = img.load()
             
@@ -271,10 +312,8 @@ class SprReader:
             y = 0
             drawn = 0
             
-            # Proteção contra arquivos muito pequenos (ex: apenas header de tamanho)
-            if len(data) < 2: return None
+            if not data: return None
 
-            # O loop de leitura RLE padrão
             while p < len(data) and drawn < total_pixels:
                 if p + 4 > len(data): break
                 
@@ -282,58 +321,48 @@ class SprReader:
                 colored = struct.unpack_from('<H', data, p + 2)[0]
                 p += 4
                 
-                # Avança transparentes
                 drawn += transparent
+                
                 current_pos = y * w + x + transparent
-                x = current_pos % w
                 y = current_pos // w
+                x = current_pos % w
 
-                if p + (colored * 3) > len(data): break
+                if p + colored * 3 > len(data): break
                 
                 for _ in range(colored):
                     if y >= h: break
+                    
                     r = data[p]
                     g = data[p+1]
                     b = data[p+2]
-                    pixels[x, y] = (r, g, b, 255)
-                    p += 3
                     
+
+                    pixels[x, y] = (r, g, b, 255)
+                    
+                    p += 3
                     x += 1
                     drawn += 1
                     if x >= w:
                         x = 0
                         y += 1
             
-            # Se desenhou algo coerente, retornamos a imagem
-            if drawn >= total_pixels or (p >= len(data) and drawn > 0):
-                return img
+            return img
+        except Exception as e:
+            print(f"DEBUG: Erro no decodestandard: {e}")
             return None
-        except Exception:
-            return None
-
 
 
 
     def _decode_variant(self, data, skip_bytes, bpp):
-        """
-        Helper que tenta decodificar com parametros específicos.
-        Retorna Image ou None se falhar.
-        """
         try:
             if len(data) < skip_bytes + 4: return None
-            
             p = skip_bytes
-            
             w, h = struct.unpack_from('<HH', data, p)
             p += 4
             
-            if w == 0 or h == 0 or w > 128 or h > 128:
-                return None
-
+            if w == 0 or h == 0 or w > 128 or h > 128: return None
+            
             total_pixels = w * h
-            if total_pixels > 16384: # 128x128
-                return None
-
             img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
             pixels = img.load()
             
@@ -347,17 +376,15 @@ class SprReader:
                 transparent, colored = struct.unpack_from('<HH', data, p)
                 p += 4
                 
-                # Avança pixels transparentes
                 drawn += transparent
+       
                 for _ in range(transparent):
                     x += 1
                     if x >= w:
                         x = 0
                         y += 1
 
-
-                if p + (colored * bpp) > len(data):
-                    return None # 
+                if p + (colored * bpp) > len(data): return None 
                 
                 for _ in range(colored):
                     if y >= h: break
@@ -365,7 +392,14 @@ class SprReader:
                     r = data[p]
                     g = data[p+1]
                     b = data[p+2]
-                    a = data[p+3] if bpp == 4 else 255 # Alpha 255 se for RGB
+                    
+    
+                    if bpp == 4:
+                        a = data[p+3]
+             
+                        if a == 0: a = 255 
+                    else:
+                        a = 255
                     
                     pixels[x, y] = (r, g, b, a)
                     p += bpp
@@ -382,12 +416,81 @@ class SprReader:
             return None
 
 
-class DatSprTab(ctk.CTkFrame):
-    """Constrói a interface completa do editor DAT/SPR na aba correspondente."""
+    def _decode_1098_rgba(self, data):
+        """
+        Decodificador para formato de sprite 32x32 do Tibia 10.x:
+        - data: sequência RLE de (transparent:uint16, colored:uint16, colored*4 bytes BGRA)
+        """
+        try:
+            w, h = 32, 32
+            img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+            pixels = img.load()
 
+            x = 0
+            y = 0
+            p = 0
+            total_pixels = w * h
+            drawn = 0
+
+            while p + 4 <= len(data) and drawn < total_pixels:
+  
+                transparent, colored = struct.unpack_from('<HH', data, p)
+                p += 4
+
+  
+                drawn += transparent
+                for _ in range(transparent):
+                    x += 1
+                    if x >= w:
+                        x = 0
+                        y += 1
+                        if y >= h:
+                            break
+
+                if p + colored * 4 > len(data):
+                    break
+
+                for _ in range(colored):
+                    if y >= h:
+                        break
+
+                    b = data[p]
+                    g = data[p+1]
+                    r = data[p+2]
+                    a = data[p+3]
+                    p += 4
+
+ 
+                    if a == 0:
+                        a = 255
+
+                    pixels[x, y] = (r, g, b, a)
+
+                    x += 1
+                    drawn += 1
+                    if x >= w:
+                        x = 0
+                        y += 1
+                        if y >= h:
+                            break
+
+            return img
+
+        except Exception as e:
+            print("DEBUG: erro em _decode_1098_rgba:", e)
+            return None
+
+
+
+class DatSprTab(ctk.CTkFrame):
     def __init__(self, parent):
         super().__init__(parent)
         
+        self.current_preview_sprite_list = [] 
+        self.current_preview_index = 0
+        self.selected_sprite_id = None             
+        self.visible_sprite_widgets = {}        
+  
         self.editor = None  # Instância de DatEditor
         self.spr = None     # Instância de SprReader
         self.current_ids = []
@@ -396,6 +499,12 @@ class DatSprTab(ctk.CTkFrame):
 
         self.build_ui()
         
+                
+        self.sprites_per_page = 250
+        self.sprite_page = 0
+        self.sprite_thumbs = {}
+                
+        
 
         ctk.CTkLabel(
             self,
@@ -403,12 +512,16 @@ class DatSprTab(ctk.CTkFrame):
             text_color="#ff5555",     
             font=("Arial", 30, "bold") 
         ).pack(side="top", pady=4)
-
-   
+        
+       
     def build_ui(self):
-        self.ids_list_frame = ctk.CTkScrollableFrame(self, label_text="List", border_width=1, border_color="gray30")        
+        self.ids_list_frame = ctk.CTkScrollableFrame(self, label_text="List ID", border_width=1, border_color="gray30")        
         self.ids_list_frame.pack(side="left", padx=10, pady=10, fill="y")
-
+        
+        self.sprite_list_frame = ctk.CTkScrollableFrame(self, label_text="List Sprites", border_width=1, border_color="gray30")        
+        self.sprite_list_frame.pack(side="right", padx=10, pady=10, fill="y")       
+        
+        self.selected_sprite_id = None 
         self.id_buttons = {}
         self.ids_per_page = 250
         self.current_page = 0
@@ -464,7 +577,7 @@ class DatSprTab(ctk.CTkFrame):
         
         self.file_label = ctk.CTkLabel(
             self.top_frame, 
-            text="Nenhum arquivo carregado.", 
+            text="No file loaded.",
             text_color="gray"
         )
         self.file_label.pack(side="left", padx=10, expand=True, fill="x")
@@ -477,7 +590,8 @@ class DatSprTab(ctk.CTkFrame):
         
         self.id_entry = ctk.CTkEntry(
             self.id_frame, 
-            placeholder_text="Insira os IDs dos itens aqui"
+            placeholder_text="Enter the item IDs here"
+
         )    
         self.id_entry.pack(side="left", padx=10,pady=10, expand=True, fill="x")
         self.id_entry.bind("<Return>", lambda event: self.load_ids_from_entry())
@@ -490,7 +604,6 @@ class DatSprTab(ctk.CTkFrame):
         )
         self.load_ids_button.pack(side="left", padx=5)
 
-        # Atributos (Flags)
         self.attributes_frame = ctk.CTkScrollableFrame(self, label_text="Flags", border_width=1, border_color="gray30")
         self.attributes_frame.pack(padx=10, pady=10, fill="both", expand=True)
         
@@ -505,7 +618,6 @@ class DatSprTab(ctk.CTkFrame):
             cb.grid(row=row, column=col, padx=10, pady=5, sticky="w")
             self.checkboxes[attr_name] = cb
 
-        # Frame para atributos numéricos
         self.numeric_attrs_frame = ctk.CTkFrame(self, border_width=1, border_color="gray30")
         self.numeric_attrs_frame.pack(padx=10, pady=5, fill="x")
 
@@ -514,12 +626,12 @@ class DatSprTab(ctk.CTkFrame):
 
         attrs_config = [
             ("Minimap (0-215):", "ShowOnMinimap", True, "color"),
-            ("Elevation:", "HasElevation", False, None),
-            ("Ground Speed:", "Ground", False, None),
-            ("Offset X:", "HasOffset_X", False, None),
-            ("Offset Y:", "HasOffset_Y", False, None),
-            ("Light Level:", "HasLight_Level", False, None),
-            ("Light Color:", "HasLight_Color", True, "color")
+            ("Elevation (0-32):", "HasElevation", False, None),
+            ("Ground Speed (0-1000):", "Ground", False, None),
+            ("Offset X (-64 to 64):", "HasOffset_X", False, None),
+            ("Offset Y (-64 to 64):", "HasOffset_Y", False, None),
+            ("Light Level: (0-10)", "HasLight_Level", False, None),
+            ("Light Color: (0-215)", "HasLight_Color", True, "color")
         ]
 
         row = 0
@@ -551,15 +663,26 @@ class DatSprTab(ctk.CTkFrame):
             
             row += 1
 
-        # Spr preview area (direita)
+
         self.preview_frame = ctk.CTkFrame(self, border_width=1, border_color="gray30")
         self.preview_frame.pack(side="right", padx=10, pady=10, fill="both", expand=False)
         
         ctk.CTkLabel(self.preview_frame, text="Preview").pack(pady=(6,0))
         
-        self.canvas = Canvas(self.preview_frame, width=150, height=135, bg="#303030")
-        self.canvas.pack(padx=6, pady=6)
         
+        self.image_label = ctk.CTkLabel(
+            self.preview_frame, 
+            text="",          
+            width=150,         
+            height=150,
+            fg_color="#222121",  
+            text_color="white",   
+            corner_radius=6
+        )
+        self.image_label.pack(padx=6, pady=6)
+        self.image_label.bind("<Button-1>", self.on_preview_click)
+     
+    
         self.prev_controls = ctk.CTkFrame(self.preview_frame)
         self.prev_controls.pack(padx=6, pady=6, fill="x")
         
@@ -584,14 +707,12 @@ class DatSprTab(ctk.CTkFrame):
         
         self.preview_info = ctk.CTkLabel(
             self.preview_frame, 
-            text="Nenhuma sprite carregada.", 
+            text="No sprite loaded.",
             wraplength=250, 
             justify="left"
         )
         self.preview_info.pack(padx=6, pady=(0,6))
 
-
-        # Bottom Frame
         self.bottom_frame = ctk.CTkFrame(self)
         self.bottom_frame.pack(padx=10, pady=10, fill="x")
 
@@ -620,29 +741,27 @@ class DatSprTab(ctk.CTkFrame):
         
 
     def insert_ids(self):
-        """Insere novos IDs. Se o campo estiver vazio, cria no final da lista."""
         if not self.editor:
-            messagebox.showwarning("Aviso", "Carregue um arquivo .dat primeiro.")
+            messagebox.showwarning("Warning", "Load a .dat file first.")
             return
         
         id_string = self.id_operation_entry.get().strip()
         ids_to_insert = []
 
-        # LÓGICA NOVA: Se vazio, define o próximo ID disponível (final da lista)
+
         if not id_string:
-            # Pega o maior ID atual e soma 1
+
             next_id = self.editor.counts['items'] + 1
             ids_to_insert = [next_id]
         else:
             ids_to_insert = self.parse_ids(id_string)
         
         if not ids_to_insert:
-            messagebox.showerror("Erro", "Formato de ID inválido.")
+            messagebox.showerror("Error", "Invalid ID format.")
+
             return
         
-        # Validação: IDs devem ser sequenciais ao final
-        # (O código original já lidava com isso, mantivemos a estrutura)
-        
+
         inserted_count = 0
         for new_id in ids_to_insert:
             if new_id in self.editor.things['items']:
@@ -667,35 +786,34 @@ class DatSprTab(ctk.CTkFrame):
             self.editor.things['items'][new_id] = empty_item
             inserted_count += 1
             
-            # Atualizar contador se necessário
             if new_id > self.editor.counts['items']:
                 self.editor.counts['items'] = new_id
         
         if inserted_count > 0:
             self.status_label.configure(
-                text=f"{inserted_count} ID(s) inserido(s) com sucesso.",
+                text=f"{inserted_count} ID(s) successfully inserted.",
                 text_color="green"
             )
             self.refresh_id_list()
             self.id_operation_entry.delete(0, "end")
             
-            # Opcional: Já carrega o ID novo criado para facilitar
+
             if len(ids_to_insert) == 1:
                 self.load_single_id(ids_to_insert[0])
-                # Vai para a última página se for um ID novo no final
+                
                 target_page = (ids_to_insert[0] - 100) // self.ids_per_page
                 if self.current_page != target_page:
                     self.current_page = target_page
                     self.refresh_id_list()
         else:
             self.status_label.configure(
-                text="Nenhum ID novo foi inserido (já existem).",
+                text="No new IDs were inserted (they already exist).",
                 text_color="yellow"
             )
 
     def delete_ids(self):
         if not self.editor:
-            messagebox.showwarning("Aviso", "Carregue um arquivo .dat primeiro.")
+            messagebox.showwarning("Warning", "Load a .dat file first.")
             return
 
         id_string = self.id_operation_entry.get().strip()
@@ -716,17 +834,16 @@ class DatSprTab(ctk.CTkFrame):
             return
 
         confirm = messagebox.askyesno(
-            "Confirmar Exclusão",
-            f"Isso irá modificar {len(ids_to_delete)} itens.\n"
-            "Os IDs no meio da lista serão esvaziados.\n"
-            "Os IDs no final da lista serão removidos.\n"
-            "Deseja continuar?"
+            "Confirm Deletion",
+            f"This will modify {len(ids_to_delete)} items.\n"
+            "IDs in the middle of the list will be cleared.\n"
+            "IDs at the end of the list will be removed.\n"
+            "Do you want to continue?"
         )
 
         if not confirm:
             return
 
-        # Ordena os IDs em ordem decrescente para facilitar a exclusão do final da lista
         ids_to_delete.sort(reverse=True)
 
         deleted_count = 0
@@ -735,7 +852,6 @@ class DatSprTab(ctk.CTkFrame):
         last_item_id = self.editor.counts['items']
         ids_to_delete_set = set(ids_to_delete)
         
-        # Remove os itens do final da lista
         while last_item_id in ids_to_delete_set:
             if last_item_id in self.editor.things['items']:
                 del self.editor.things['items'][last_item_id]
@@ -745,10 +861,9 @@ class DatSprTab(ctk.CTkFrame):
             
         self.editor.counts['items'] = last_item_id
         
-        # Esvazia os outros itens (que não estão no final)
         for item_id in ids_to_delete_set:
             if item_id in self.editor.things['items']:
-                # Cria um item em branco com uma textura mínima de 1x1
+ 
                 minimal_texture = b'\x01\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00'
                 self.editor.things['items'][item_id] = {
                     "props": OrderedDict(),
@@ -756,11 +871,13 @@ class DatSprTab(ctk.CTkFrame):
                 }
                 emptied_count += 1
                 
+
         status_message = ""
         if emptied_count > 0:
-            status_message += f"{emptied_count} IDs foram esvaziados. "
+            status_message += f"{emptied_count} IDs were cleared. "
         if deleted_count > 0:
-            status_message += f"{deleted_count} IDs do final da lista foram removidos."
+            status_message += f"{deleted_count} IDs at the end of the list were removed."
+            
 
         self.status_label.configure(
             text=status_message,
@@ -791,14 +908,14 @@ class DatSprTab(ctk.CTkFrame):
             idx = int(val)
             
             if attr_name == "ShowOnMinimap":
-                # Validação 0-215
+
                 if 0 <= idx <= 215:
                     r, g, b = ob_index_to_rgb(idx)
                     preview.configure(fg_color=f"#{r:02x}{g:02x}{b:02x}")
                 else:
                     preview.configure(fg_color="red")
             elif attr_name == "HasLight_Color":
-                # Conversão de índice 16-bit para RGB
+
                 if 0 <= idx <= 65535:
                     r, g, b = self.light_color_to_rgb(idx)
                     preview.configure(fg_color=f"#{r:02x}{g:02x}{b:02x}")
@@ -808,17 +925,21 @@ class DatSprTab(ctk.CTkFrame):
             preview.configure(fg_color="gray")
 
     def light_color_to_rgb(self, color_val):
-        """Converte valor de cor de luz (RGB555/RGB565) para RGB888."""
-        # Assumindo RGB555 (5 bits cada)
         r = ((color_val & 0x1F) << 3)
         g = (((color_val >> 5) & 0x1F) << 3)
         b = (((color_val >> 10) & 0x1F) << 3)
         return r, g, b
             
-            
+    def next_page(self):
+        self.current_page += 1
+        self.refresh_id_list()
+
+    def prev_page(self):
+        if self.current_page > 0:
+            self.current_page -= 1
+        self.refresh_id_list()            
         
     def refresh_id_list(self):
-        # limpa widgets anteriores
         for widget in self.ids_list_frame.winfo_children():
             widget.destroy()
 
@@ -828,19 +949,58 @@ class DatSprTab(ctk.CTkFrame):
         start = self.current_page * self.ids_per_page + 100
         end = min(start + self.ids_per_page, total + 1)
 
-        # cria os labels clicáveis
         for item_id in range(start, end):
-            lbl = ctk.CTkLabel(
-                self.ids_list_frame,
-                text=str(item_id),
-                fg_color=("gray15", "gray25"),
-                width=120
-            )
-            lbl.pack(pady=1, fill="x")
-            lbl.bind("<Button-1>", lambda e, iid=item_id: self.load_single_id(iid))
-            self.id_buttons[item_id] = lbl
 
-        # botões de paginação
+            item_frame = ctk.CTkFrame(
+                self.ids_list_frame,
+                fg_color="transparent"
+            )
+            item_frame.pack(pady=1, fill="x")
+            
+            sprite_label = ctk.CTkLabel(
+                item_frame,
+                text="",
+                width=80,
+                height=80,
+                fg_color="#222121"
+            )
+            sprite_label.pack(side="left", padx=(2, 5))
+            
+            if self.spr and item_id in self.editor.things['items']:
+                item = self.editor.things['items'][item_id]
+                sprite_ids = DatEditor.extract_sprite_ids_from_texture_bytes(item['texture_bytes'])
+                
+                if sprite_ids and sprite_ids[0] > 0:
+                    try:
+                        img = self.spr.get_sprite(sprite_ids[0])
+                        if img:
+ 
+                            img_resized = img.resize((32, 32), Image.NEAREST)
+                            tk_img = ctk.CTkImage(
+                                light_image=img_resized,
+                                dark_image=img_resized,
+                                size=(72, 72)
+                            )
+                            sprite_label.configure(image=tk_img, text="")
+                            sprite_label.image = tk_img 
+                    except Exception as e:
+                        print(f"Erro ao carregar sprite para ID {item_id}: {e}")
+            
+            id_label = ctk.CTkLabel(
+                item_frame,
+                text=str(item_id),
+                fg_color=(("gray15", "gray25")),
+                width=80,
+                anchor="w"
+            )
+            id_label.pack(side="left", fill="x", expand=True)
+            
+            item_frame.bind("<Button-1>", lambda e, iid=item_id: self.load_single_id(iid))
+            sprite_label.bind("<Button-1>", lambda e, iid=item_id: self.load_single_id(iid))
+            id_label.bind("<Button-1>", lambda e, iid=item_id: self.load_single_id(iid))
+            
+            self.id_buttons[item_id] = id_label
+
         nav_frame = ctk.CTkFrame(self.ids_list_frame)
         nav_frame.pack(pady=10)
 
@@ -863,35 +1023,223 @@ class DatSprTab(ctk.CTkFrame):
             next_btn.pack(side="left", padx=5)
             
             
-    def next_page(self):
-        self.current_page += 1
-        self.refresh_id_list()
-
-    def prev_page(self):
-        if self.current_page > 0:
-            self.current_page -= 1
-        self.refresh_id_list()
-            
+    def refresh_sprite_list(self):
+        for w in self.sprite_list_frame.winfo_children():
+            w.destroy()
         
+        self.sprite_thumbs.clear()
+        self.visible_sprite_widgets = {} 
+
+        if not self.spr: return
+
+        total = self.spr.sprite_count
+        start = self.sprite_page * self.sprites_per_page + 1
+        end = min(start + self.sprites_per_page, total + 1)
+
+        for spr_id in range(start, end):
+            item_frame = ctk.CTkFrame(self.sprite_list_frame, fg_color="transparent")
+            item_frame.pack(pady=1, fill="x")
+
+            is_current = (spr_id == self.selected_sprite_id)
+            
+            # Define cores iniciais
+            bg_color = "#555555" if is_current else "transparent"
+            txt_color = "cyan" if is_current else "white"
+
+            def on_item_click(e, sid=spr_id):
+                self.select_sprite(sid, from_preview_click=False)
+
+            img_label = ctk.CTkLabel(item_frame, text="", width=80, height=80, fg_color="#222121")
+            img_label.pack(side="left", padx=(2, 5))
+            
+            text_label = ctk.CTkLabel(
+                item_frame,
+                text=str(spr_id),
+                width=60,
+                anchor="w",
+                fg_color=bg_color,   
+                text_color=txt_color 
+            )
+            text_label.pack(side="left", fill="x", expand=True)
+            
+            self.visible_sprite_widgets[spr_id] = text_label
+
+            img = self.spr.get_sprite(spr_id)
+            if img:
+                thumb = img.resize((32, 32), Image.NEAREST)
+                tk_img = ctk.CTkImage(light_image=thumb, dark_image=thumb, size=(72, 72))
+                img_label.configure(image=tk_img)
+                self.sprite_thumbs[spr_id] = tk_img
+
+            item_frame.bind("<Button-1>", on_item_click)
+            img_label.bind("<Button-1>", on_item_click)
+            text_label.bind("<Button-1>", on_item_click)
+
+
+
+        nav = ctk.CTkFrame(self.sprite_list_frame)
+        nav.pack(pady=10)
+
+        if self.sprite_page > 0:
+            ctk.CTkButton(
+                nav, text="⟵", width=60,
+                command=self.prev_sprite_page
+            ).pack(side="left", padx=5)
+
+        if end <= total:
+            ctk.CTkButton(
+                nav, text="⟶", width=60,
+                command=self.next_sprite_page
+            ).pack(side="left", padx=5)
+            
+            
+    def update_list_selection_visuals(self):
+        """
+        Atualiza apenas as cores dos itens visíveis na lista, sem recarregar imagens.
+        """
+        if not hasattr(self, 'visible_sprite_widgets'):
+            return
+
+        for spr_id, label_widget in self.visible_sprite_widgets.items():
+            if spr_id == self.selected_sprite_id:
+                try:
+                    label_widget.configure(fg_color="#555555", text_color="cyan")
+                except:
+                    pass
+            else:
+                try:
+                    label_widget.configure(fg_color="transparent", text_color="white")
+                except:
+                    pass
+            
+                  
+    def next_sprite_page(self):
+        if not self.spr:
+            return
+        max_page = (self.spr.sprite_count - 1) // self.sprites_per_page
+        if self.sprite_page < max_page:
+            self.sprite_page += 1
+            self.refresh_sprite_list()
+
+    def prev_sprite_page(self):
+        if self.sprite_page > 0:
+            self.sprite_page -= 1
+            self.refresh_sprite_list()
+            
+            
+    def update_preview_image(self):
+        if not self.spr or not hasattr(self, 'current_preview_sprite_list') or not self.current_preview_sprite_list:
+            self.image_label.configure(image=None, text="No sprite")
+            self.prev_index_label.configure(text="Sprite 0 / 0")
+            self.preview_info.configure(text="")
+            return
+
+        if self.current_preview_index < 0:
+            self.current_preview_index = 0
+        if self.current_preview_index >= len(self.current_preview_sprite_list):
+            self.current_preview_index = 0
+
+        sprite_id = self.current_preview_sprite_list[self.current_preview_index]
+
+        img = self.spr.get_sprite(sprite_id)
+
+        if img:
+ 
+            preview_size = (128, 128) 
+            img_resized = img.resize(preview_size, Image.NEAREST)
+
+            tk_img = ctk.CTkImage(
+                light_image=img_resized,
+                dark_image=img_resized,
+                size=preview_size
+            )
+            
+            self.image_label.configure(image=tk_img, text="")
+            self.image_label.image = tk_img 
+        else:
+            self.image_label.configure(image=None, text="Empty/Error")
+
+        total = len(self.current_preview_sprite_list)
+        self.prev_index_label.configure(text=f"Sprite {self.current_preview_index + 1} / {total}")
+        self.preview_info.configure(text=f"Sprite ID: {sprite_id}")
+            
+
+    def load_sprite_in_preview(self, spr_id: int):
+        if not self.spr:
+            return
+
+        self.current_preview_sprite_list = [spr_id]
+        self.current_preview_index = 0
+        self.show_preview_at_index(0)
+        
+    def on_preview_click(self, event):
+        preview_list = getattr(self, 'current_preview_sprite_list', [])
+        
+        if not preview_list:
+            return
+        
+        idx = getattr(self, 'current_preview_index', 0)
+        if idx < 0 or idx >= len(preview_list):
+            return
+
+        current_sprite_id = preview_list[idx]
+        
+        self.select_sprite(current_sprite_id, from_preview_click=True) 
+        
+        if hasattr(self, 'status_label'):
+            self.status_label.configure(
+                text=f"Selected sprite {current_sprite_id} from preview.",
+                text_color="cyan"
+            )
+
+            
+    def select_sprite(self, sprite_id, from_preview_click=False):
+        if not self.spr or sprite_id <= 0 or sprite_id > self.spr.sprite_count:
+            return
+
+        self.selected_sprite_id = sprite_id
+
+        if not from_preview_click:
+            self.current_preview_sprite_list = [sprite_id]
+            self.current_preview_index = 0
+            self.update_preview_image() 
+
+        target_page = (sprite_id - 1) // self.sprites_per_page
+
+        if self.sprite_page != target_page:
+            self.sprite_page = target_page
+            self.refresh_sprite_list()
+        else:
+            self.update_list_selection_visuals()
+
+        try:
+            self.after(50, lambda: self._scroll_to_sprite(sprite_id))
+        except:
+            pass
+
+
+    def _scroll_to_sprite(self, sprite_id):
+        index_in_page = (sprite_id - 1) % self.sprites_per_page
+        scroll_pos = index_in_page / self.sprites_per_page
+        self.sprite_list_frame._parent_canvas.yview_moveto(scroll_pos)
+
+
     def load_single_id(self, item_id):
         if not self.editor:
             return
 
-        # limpar seleção anterior
         self.current_ids = [item_id]
         self.id_entry.delete(0, "end")
         self.id_entry.insert(0, str(item_id))
 
-        # atualizar UI
         self.update_checkboxes_for_ids()
         self.prepare_preview_for_current_ids()
 
-        # destaque do botão clicado
         for iid, button in self.id_buttons.items():
             if iid == item_id:
                 button.configure(
-                    fg_color="#555555",        # cor de fundo "pressed"
-                    text_color="cyan"          # destaca o texto
+                    fg_color="#555555",        
+                    text_color="cyan"          
                 )
             else:
                 button.configure(
@@ -913,27 +1261,29 @@ class DatSprTab(ctk.CTkFrame):
         #self.load_spr_button.configure(state="normal")
         for entry in self.numeric_entries.values():
             entry.configure(state="disabled")
-        self.insert_id_button.configure(state="disabled")  # NOVO
-        self.delete_id_button.configure(state="disabled")  # NOVO         
+        self.insert_id_button.configure(state="disabled")  
+        self.delete_id_button.configure(state="disabled")       
 
     def enable_editing(self):
         self.id_entry.configure(state="normal")
         self.load_ids_button.configure(state="normal")
         self.apply_button.configure(state="normal")
         self.save_button.configure(state="normal")
-        self.insert_id_button.configure(state="normal")  # NOVO
-        self.delete_id_button.configure(state="normal")  # NOVO        
+        self.insert_id_button.configure(state="normal")  
+        self.delete_id_button.configure(state="normal")     
         for cb in self.checkboxes.values():
             cb.configure(state="normal")
         self.numeric_entries["ShowOnMinimap"].configure(state="normal")
         for entry in self.numeric_entries.values():
             entry.configure(state="normal")        
 
+          
     def load_dat_file(self):
         filepath = filedialog.askopenfilename(
-            title="Selecione o arquivo .dat",
+            title="Select the .dat file",
             filetypes=[("DAT files", "*.dat"), ("All files", "*.*")]
         )
+            
         if not filepath:
             return
 
@@ -942,9 +1292,10 @@ class DatSprTab(ctk.CTkFrame):
             self.editor.load()
             self.current_page = 0
             self.refresh_id_list()
+            
             self.file_label.configure(text=filepath, text_color="white")
             self.status_label.configure(
-                text=f"Arquivo .dat carregado! Itens: {self.editor.counts['items']}",
+                text=f".dat file loaded! Items: {self.editor.counts['items']}",            
                 text_color="green"
             )
             self.enable_editing()
@@ -952,7 +1303,7 @@ class DatSprTab(ctk.CTkFrame):
 
             base_path = os.path.splitext(filepath)[0]
             spr_path = base_path + ".spr"
-
+               
             if os.path.exists(spr_path):
                 if self.spr:
                     self.spr.close()
@@ -962,38 +1313,68 @@ class DatSprTab(ctk.CTkFrame):
 
                 self.status_label.configure(
                     text=self.status_label.cget("text") +
-                         f" | SPR carregado ({self.spr.sprite_count} sprites)",
+                         f" | SPR loaded ({self.spr.sprite_count} sprites)",
                     text_color="cyan"
                 )
                 self.preview_info.configure(
-                    text=f"SPR carregado automaticamente:\n{spr_path}"
+                    text=f"SPR automatically loaded:\n{spr_path}"
                 )
             else:
                 self.preview_info.configure(
-                    text="Aviso: Tibia.spr não encontrado na mesma pasta."
+                    text="Warning: Tibia.spr not found in the same folder."
                 )
+                
 
         except Exception as e:
             print(e)
             messagebox.showerror(
-                "Erro ao Carregar",
-                f"Não foi possível carregar ou analisar o arquivo:\n{e}"
+                "Load Error",
+                f"Could not load or parse the file:\n{e}"
             )
-            self.status_label.configure(text="Falha ao carregar o arquivo.", text_color="red")
+            self.status_label.configure(text="Failed to load the file.", text_color="red")
+           
+        filepath = filedialog.askopenfilename(
+            title="Select the Tibia.spr file",
+            filetypes=[("SPR files", "*.spr"), ("All files", "*.*")]
+        )
+        if not filepath:
+            return
+        try:
+            if self.spr:
+                self.spr.close()
+            self.spr = SprReader(filepath)
+            self.spr.load()
+            self.status_label.configure(
+                text=f"SPR loaded! Sprites: {self.spr.sprite_count}",
+                text_color="green"
+            )
+            self.preview_info.configure(
+                text=f"SPR loaded: {filepath}\nSprites: {self.spr.sprite_count}"
+            )
+
+            # ATUALIZA LIST Sprites
+            self.sprite_page = 0
+            self.refresh_sprite_list()
+
+        except Exception as e:
+            messagebox.showerror("Load SPR Error", f"Could not load/open the SPR:\n{e}")
+            self.status_label.configure(text="Failed to load SPR.", text_color="red")            
+            
 
     def load_spr_file(self):
-        filepath = filedialog.askopenfilename(title="Selecione o arquivo Tibia.spr", filetypes=[("SPR files", "*.spr"), ("All files", "*.*")])
+        filepath = filedialog.askopenfilename(title="Select the Tibia.spr file", filetypes=[("SPR files", "*.spr"), ("All files", "*.*")])
         if not filepath: return
         try:
             if self.spr:
                 self.spr.close()
             self.spr = SprReader(filepath)
             self.spr.load()
-            self.status_label.configure(text=f"SPR carregado! Sprites: {self.spr.sprite_count}", text_color="green")
-            self.preview_info.configure(text=f"SPR carregado: {filepath}\nSprites: {self.spr.sprite_count}")
+            self.status_label.configure(text=f"SPR loaded! Sprites: {self.spr.sprite_count}", text_color="green")
+            self.preview_info.configure(text=f"SPR loaded: {filepath}\nSprites: {self.spr.sprite_count}")
         except Exception as e:
-            messagebox.showerror("Erro ao Carregar SPR", f"Não foi possível carregar/abrir o SPR:\n{e}")
-            self.status_label.configure(text="Falha ao carregar SPR.", text_color="red")
+            messagebox.showerror("Load SPR Error", f"Could not load/open the SPR:\n{e}")
+            self.status_label.configure(text="Failed to load SPR.", text_color="red")
+            
 
     def parse_ids(self, id_string):
         ids = set()
@@ -1010,7 +1391,8 @@ class DatSprTab(ctk.CTkFrame):
                     ids.add(int(part))
             return sorted(list(ids))
         except ValueError:
-            self.status_label.configure(text="Erro: Formato de ID inválido.", text_color="orange")
+            self.status_label.configure(text="Error: Invalid ID format.", text_color="orange")
+      
             return []
 
     def load_ids_from_entry(self):
@@ -1021,7 +1403,7 @@ class DatSprTab(ctk.CTkFrame):
         
         if not self.current_ids:
             if id_string:
-                messagebox.showwarning("IDs Inválidos", "Formato incorreto. Use números, vírgulas e hifens (ex: 100, 105-110).")
+                messagebox.showwarning("Invalid IDs", "Incorrect format. Use numbers, commas, and hyphens (e.g., 100, 105-110).")
             for cb in self.checkboxes.values():
                 cb.deselect()
                 cb.configure(text_color="white")
@@ -1030,7 +1412,7 @@ class DatSprTab(ctk.CTkFrame):
 
         self.status_label.configure(text=f"Consultando {len(self.current_ids)} IDs...", text_color="cyan")
         self.update_checkboxes_for_ids()
-        self.status_label.configure(text=f"{len(self.current_ids)} IDs carregados para edição.", text_color="white")
+        self.status_label.configure(text=f"{len(self.current_ids)} IDs loaded for editing.", text_color="white")
         self.prepare_preview_for_current_ids()
 
         first_id = self.current_ids[0]
@@ -1120,7 +1502,8 @@ class DatSprTab(ctk.CTkFrame):
 
     def apply_changes(self):
         if not self.editor or not self.current_ids:
-            messagebox.showwarning("Nenhuma Ação", "Carregue um arquivo e consulte alguns IDs primeiro.")
+            messagebox.showwarning("No Action", "Load a file and check some IDs first.")
+            
             return
  
 
@@ -1165,10 +1548,10 @@ class DatSprTab(ctk.CTkFrame):
             changes_applied = True
         
         if not changes_applied:
-            self.status_label.configure(text="Nenhuma alteração detectada.", text_color="yellow")
+            self.status_label.configure(text="No changes detected.", text_color="yellow")
             return
-        
-        self.status_label.configure(text="Alterações aplicadas. Salve com 'Compile as...'", text_color="green")
+     
+        self.status_label.configure(text="Changes applied. Save with 'Compile as...'", text_color="green")
         self.update_checkboxes_for_ids()
         self.prepare_preview_for_current_ids()
 
@@ -1254,11 +1637,11 @@ class DatSprTab(ctk.CTkFrame):
 
     def save_dat_file(self):
         if not self.editor:
-            messagebox.showerror("Erro", "Nenhum arquivo .dat está carregado.")
+            messagebox.showerror("Error", "No .dat file is loaded.")
             return
             
         filepath = filedialog.asksaveasfilename(
-            title="Salvar arquivo DAT e SPR como...", 
+            title="Save DAT and SPR file as...", 
             defaultextension=".dat", 
             filetypes=[("DAT files", "*.dat"), ("All files", "*.*")]
         )
@@ -1280,25 +1663,25 @@ class DatSprTab(ctk.CTkFrame):
 
                 if os.path.abspath(self.spr.spr_path) != os.path.abspath(spr_dest_path):
                     shutil.copy2(self.spr.spr_path, spr_dest_path)
-                    msg_extra = f"\nE o arquivo .spr foi copiado junto."
+                    msg_extra = f"\nAnd the .spr file was copied along with it."
                 else:
-                    msg_extra = "\n(.spr mantido no local original)"
+                    msg_extra = "\n(.spr kept in the original location)"
             else:
-                msg_extra = "\nAviso: Nenhum .spr estava carregado para acompanhar."
+                msg_extra = "\nWarning: No .spr was loaded to accompany it."
 
             self.status_label.configure(
-                text=f"Salvo com sucesso: {os.path.basename(filepath)} (+spr)", 
+                text=f"Saved successfully: {os.path.basename(filepath)} (+spr)", 
                 text_color="lightgreen"
             )
-            messagebox.showinfo("Sucesso", f"O arquivo .dat foi compilado!{msg_extra}")
+            messagebox.showinfo("Success", f"The .dat file has been compiled!{msg_extra}")
             
         except Exception as e:
-            messagebox.showerror("Erro ao Salvar", f"Não foi possível salvar os arquivos:\n{e}")
-            self.status_label.configure(text="Falha ao salvar arquivos.", text_color="red")
+            messagebox.showerror("Save Error", f"Could not save the file:\n{e}")
+            self.status_label.configure(text="Failed to save files.", text_color="red")
 
 
     def prepare_preview_for_current_ids(self):
-        """Pega os sprite_ids do primeiro item válido da seleção e prepara lista para navegar."""
+
         self.current_preview_sprite_list = []
         self.current_preview_index = 0
         if not self.editor or not self.spr or not self.current_ids:
@@ -1319,46 +1702,68 @@ class DatSprTab(ctk.CTkFrame):
 
         self.current_preview_index = 0
         self.show_preview_at_index(self.current_preview_index)
+        print("Item", item_id, "sprite_ids:", sprite_ids)              
 
     def clear_preview(self):
-        self.canvas.delete("all")
-        self.prev_index_label.configure(text="Sprite 0 / 0")
-        self.preview_info.configure(text="Nenhuma sprite disponível.")
+        try:
+            self.image_label.configure(image=None, text="")
+        except Exception:
+            pass
+            
+        self.image_label.image = None # Limpa referência
+        self.preview_info.configure(text="No sprite available.")
         self.current_preview_sprite_list = []
         self.current_preview_index = 0
         self.tk_images_cache.clear()
 
+
     def change_preview_index(self, delta):
         if not self.current_preview_sprite_list:
             return
-        self.current_preview_index = (self.current_preview_index + delta) % len(self.current_preview_sprite_list)
-        self.show_preview_at_index(self.current_preview_index)
+            
+        new_index = self.current_preview_index + delta
+        
+        if 0 <= new_index < len(self.current_preview_sprite_list):
+            self.current_preview_index = new_index
+            self.show_preview_at_index(self.current_preview_index)
+
+
 
     def show_preview_at_index(self, idx):
         if not self.current_preview_sprite_list or not self.spr:
             self.clear_preview()
             return
+            
         if idx < 0 or idx >= len(self.current_preview_sprite_list):
             return
-        spr_id = self.current_preview_sprite_list[idx]
-        img = self.spr.get_sprite(spr_id)
+
+        sprid = self.current_preview_sprite_list[idx]
+        
+        img = self.spr.get_sprite(sprid)
+        
         if img is None:
-            self.canvas.delete("all")
-            self.preview_info.configure(text=f"Sprite ID {spr_id} não pôde ser decodificada pelo parser atual.")
-            self.prev_index_label.configure(text=f"Sprite {idx+1} / {len(self.current_preview_sprite_list)} (ID {spr_id})")
+            self.image_label.configure(image=None, text="Error")
             return
 
-        max_size = 256
         w, h = img.size
-        scale = 1.0
-        if max(w, h) > max_size:
-            scale = max_size / max(w, h)
-            nw = int(w * scale); nh = int(h * scale)
-            img = img.resize((nw, nh), Image.NEAREST)
-        tk_img = ImageTk.PhotoImage(img)
-        self.tk_images_cache['preview'] = tk_img  
-        self.canvas.delete("all")
-        self.canvas.create_image(2, 2, anchor="nw", image=tk_img)
-        self.prev_index_label.configure(text=f"Sprite {idx+1} / {len(self.current_preview_sprite_list)} (ID {spr_id})")
-        self.preview_info.configure(text=f"Sprite ID {spr_id} - {w}x{h} original, scale {scale:.2f}")
-        ctk.set_appearance_mode("dark")
+        scale = 4.0 if w <= 64 and h <= 64 else 2.0
+        final_w, final_h = int(w * scale), int(h * scale)
+        
+
+        img_resized = img.resize((final_w, final_h), Image.NEAREST)
+
+        tk_image = ctk.CTkImage(
+            light_image=img_resized,
+            dark_image=img_resized,
+            size=(final_w, final_h)
+        )
+
+        print(f"DEBUG UI: Size: {final_w}x{final_h}")
+        
+        self.image_label.configure(image=tk_image, text="")
+        
+        self.image_label.image = tk_image 
+   
+        self.prev_index_label.configure(text=f"Sprite {idx+1}/{len(self.current_preview_sprite_list)} (ID: {sprid})")
+        self.preview_info.configure(text=f"ID: {sprid}\nSize: {w}x{h}")
+        self.image_label.update_idletasks()
