@@ -14,6 +14,10 @@ Warning: Project is still EXPERIMENTAL – expect bugs, freezes and occasional c
 
 Features:
 
+- Support
+  - Transparency (New)
+  - Extended     (New)
+
 - Image Enhancer
   - Upscale: 2, 4, 8
   - Denoise Level: 1, 2, 3 
