@@ -34,7 +34,7 @@ Features:
   - Flags Adjust
   - Mass Edit/Delete
   
-- OTB Reload (EXPERIMENTAL)
+- OTB Reload (Dont Work)
   - Flags Reload/Sync
   
 Manipulating the dat and spr files is only 
