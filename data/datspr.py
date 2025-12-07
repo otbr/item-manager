@@ -22,24 +22,8 @@ METADATA_FLAGS = {
     0x1E: ('LensHelp', '<H'), 0x1F: ('FullGround', ''), 0x20: ('IgnoreLook', ''),
     0x21: ('IsCloth', '<H'), 0x22: ('MarketItem', None), 0x23: ('DefaultAction', '<H'),
     0x24: ('Wrappable', ''), 0x25: ('Unwrappable', ''), 0x26: ('TopEffect', ''),
-    0x27: ('Usable', ''), 0xFE: ('Usable_Extended', ''), 0xFD: ('Action_Extended', '<H'),
-    0x2B: ('LyingCorpse', ''), 0x2C: ('AnimatesAlways', ''),   
-    0x30: ('Cloth', '<H'),           
-    0x31: ('Market', None),      
-    0x33: ('Wrapable', ''),             
-    0x34: ('Unwrapable', ''),
-    0x35: ('TopOrder', ''),
-    0x37: ('Wirable', ''),              
-    0x3A: ('Chargeable', ''),           
-    0x3C: ('NoDivination', ''),         
-    0x3E: ('ReverseDesc', ''),          
-    0x3F: ('NoDrop', ''),               
-    0x40: ('NoTrade', ''),
-    0x41: ('UpgradeClassification', '<B'), # Lê 1 byte. ESSENCIAL.
-    0x42: ('Structure1098', '<H'),       
-   
+    0x27: ('Usable', ''),      
 }
-
 REVERSE_METADATA_FLAGS = {info[0]: flag for flag, info in METADATA_FLAGS.items()}
 LAST_FLAG = 0xFF
 
@@ -108,22 +92,14 @@ class DatEditor:
             if flag in METADATA_FLAGS:
                 name, fmt = METADATA_FLAGS[flag]
                 
-                if name == 'Market':
-                    header = f.read(8)
-                    if len(header) == 8:
-
-                        name_len = struct.unpack('<H', header[6:8])[0]
-
-                        f.read(name_len + 4) 
-                    continue 
-
                 if name == 'MarketItem':
                     header = f.read(8)
                     if len(header) == 8:
                         name_len = struct.unpack('<H', header[6:8])[0]
-
-                        f.read(name_len + 4)
-                    continue 
+                        rest = f.read(name_len + 4)
+                        props[name] = True
+                        props[name + '_data'] = header + rest
+                    pass 
 
                 props[name] = True
                 if fmt:
@@ -132,9 +108,7 @@ class DatEditor:
                     props[name + '_data'] = struct.unpack(fmt, data)
             
             else:
-                pass
-
-
+                pass 
         texture_block_start = f.tell()
         wh_bytes = f.read(2)
         if len(wh_bytes) < 2: return {"props": props, "texture_bytes": b""}
@@ -213,52 +187,73 @@ class DatEditor:
 
     def save(self, output_path):
         with open(output_path, 'wb') as f:
+
             f.write(struct.pack('<I', self.signature))
-            f.write(struct.pack('<HHHH', self.counts['items'], self.counts['outfits'], self.counts['effects'], self.counts['missiles']))
             
-            #  Items
-            for item_id in range(100, self.counts['items'] + 1):
-                item = self.things['items'].get(item_id)
-                if item:
-                    self._write_thing_properties(f, item['props'])
-                    f.write(item['texture_bytes'])
+
+            count_items = self.counts['items']
+            count_outfits = self.counts['outfits']
+            count_effects = self.counts['effects']
+            count_missiles = self.counts['missiles']
             
-            #  Outfits
-            for outfit_id in range(1, self.counts['outfits'] + 1):
-                item = self.things['outfits'].get(outfit_id)
-                if item:
-                    self._write_thing_properties(f, item['props'])
-                    f.write(item['texture_bytes'])
+            f.write(struct.pack('<HHHH', count_items, count_outfits, count_effects, count_missiles))
+            
 
-            #  Effects
-            for effect_id in range(1, self.counts['effects'] + 1):
-                item = self.things['effects'].get(effect_id)
-                if item:
-                    self._write_thing_properties(f, item['props'])
-                    f.write(item['texture_bytes'])
+            def write_category(start_id, end_id, category_name):
+                for tid in range(start_id, end_id + 1):
+                    thing = self.things[category_name].get(tid)
+                    
+                    if thing and len(thing.get('texture_bytes', b'')) > 0:
+                        self._write_thing_properties(f, thing['props'])
+                        
+                        f.write(struct.pack('<B', LAST_FLAG)) 
+                        
+                        f.write(thing['texture_bytes'])
+                    else:
+                        f.write(struct.pack('<B', LAST_FLAG)) 
+                        f.write(b'\x01\x01\x01\x01\x01\x01\x01') 
 
-            #  Missiles
-            for missile_id in range(1, self.counts['missiles'] + 1):
-                item = self.things['missiles'].get(missile_id)
-                if item:
-                    self._write_thing_properties(f, item['props'])
-                    f.write(item['texture_bytes'])
+                        if self.extended:
+                            f.write(b'\x00\x00\x00\x00')
+                        else:
+                            f.write(b'\x00\x00')
+
+
+            #  Items 
+            write_category(100, count_items, 'items')
+            
+            #  Outfits 
+            write_category(1, count_outfits, 'outfits')
+
+            #  Effects 
+            write_category(1, count_effects, 'effects')
+
+            #  Missiles (
+            write_category(1, count_missiles, 'missiles')
             
 
     def _write_thing_properties(self, f, props):
         for flag, (name, fmt) in METADATA_FLAGS.items():
-            if name in props and props[name]:
-                f.write(struct.pack('<B', flag))
-                data_key = name + '_data'
-                if data_key in props:
-                    data = props[data_key]
-                    if fmt:
-                        f.write(struct.pack(fmt, *data))
-                    else:
-                 
-                        f.write(data)
-        f.write(struct.pack('<B', LAST_FLAG))
-
+  
+            if name in props:
+              
+                if props[name] is True:
+                    f.write(struct.pack('<B', flag))
+                    
+                    data_key = name + '_data'
+                    if data_key in props:
+                        data = props[data_key]
+                        
+                        if fmt:
+                            try:
+                                f.write(struct.pack(fmt, *data))
+                            except Exception as e:
+                                print(f"Erro salvando flag {name} ({hex(flag)}): {e}")
+                        else:
+                            if isinstance(data, bytes):
+                                f.write(data)
+                            else:
+                                print(f"Erro: Dados de {name} não são bytes.")
 
     @staticmethod
     def extract_sprite_ids_from_texture_bytes(texture_bytes):
@@ -291,134 +286,187 @@ class DatEditor:
         except Exception:
             return []
 
-class SprReader:
+class SprEditor:
     def __init__(self, spr_path, transparency=False):
         self.spr_path = spr_path
+        self.transparency = transparency
         self.signature = 0
         self.sprite_count = 0
-        self.offsets = []
-        self._f = None
-        self.transparency = transparency        
+        self.sprites_data = {} 
+        self.modified = False
 
     def load(self):
-        self._f = open(self.spr_path, 'rb')
-        f = self._f
-        f.seek(0)
-        header = f.read(8)
-        if len(header) < 8:
-            raise ValueError("Invalid or truncated SPR file.")
-        self.signature, self.sprite_count = struct.unpack('<II', header)
-        self.offsets = []
-        for _ in range(self.sprite_count):
-            data = f.read(4)
-            if len(data) < 4:
-                self.offsets.append(0)
-            else:
-                self.offsets.append(struct.unpack('<I', data)[0])
+        if not os.path.exists(self.spr_path):
+            return
 
-    def close(self):
-        if self._f:
-            self._f.close()
-            self._f = None
+        with open(self.spr_path, 'rb') as f:
+            header = f.read(8)
+            if len(header) < 8:
+                raise ValueError("Invalid SPR file.")
+            
+            self.signature, self.sprite_count = struct.unpack('<II', header)
+            
+            offsets = []
+            for _ in range(self.sprite_count):
+                offsets.append(struct.unpack('<I', f.read(4))[0])
+            
+     
+            file_size = f.seek(0, 2)
+            
+            for i, offset in enumerate(offsets):
+                sprite_id = i + 1
+                if offset == 0:
+                    self.sprites_data[sprite_id] = b''
+                    continue
 
+                next_offset = 0
+                for j in range(i + 1, len(offsets)):
+                    if offsets[j] != 0:
+                        next_offset = offsets[j]
+                        break
+                
+                if next_offset == 0:
+                    size = file_size - offset
+                else:
+                    size = next_offset - offset
+                
+                f.seek(offset)
+                self.sprites_data[sprite_id] = f.read(size)
+
+    def save(self, output_path):
+        with open(output_path, 'wb') as f:
+            f.write(struct.pack('<II', self.signature, self.sprite_count))
+            
+            current_offset = 8 + (self.sprite_count * 4)
+            
+            offsets_start_pos = f.tell()
+            f.write(b'\x00\x00\x00\x00' * self.sprite_count)
+            
+            final_offsets = []
+            
+            for sprite_id in range(1, self.sprite_count + 1):
+                data = self.sprites_data.get(sprite_id, b'')
+                
+                if not data:
+                    final_offsets.append(0)
+                else:
+                    final_offsets.append(current_offset)
+                    f.write(data)
+                    current_offset += len(data)
+            
+            f.seek(offsets_start_pos)
+            for off in final_offsets:
+                f.write(struct.pack('<I', off))
 
     def get_sprite(self, sprite_id):
-        if not self._f or sprite_id <= 0 or sprite_id > self.sprite_count:
+        raw_data = self.sprites_data.get(sprite_id)
+        if not raw_data:
             return None
             
-        #print("getsprite called with", sprite_id, "spritecount", self.sprite_count)         
-       
-        offset = self.offsets[sprite_id - 1]
-        if offset == 0: return None
-            
-        next_offset = 0
-        for i in range(sprite_id, self.sprite_count):
-            if self.offsets[i] != 0:
-                next_offset = self.offsets[i]
-                break
-        
-        self._f.seek(0, 2)
-        file_size = self._f.tell()
-        size = (next_offset - offset) if (next_offset > offset) else (file_size - offset)
-        
-        if size <= 0: return None
-
-        self._f.seek(offset)
-        raw_data = self._f.read(size)
-
         start_idx = 0
         if len(raw_data) >= 3 and raw_data[0] == 0xFF and raw_data[1] == 0x00 and raw_data[2] == 0xFF:
             start_idx = 3
-        
+            
         if start_idx + 2 <= len(raw_data):
-            data_size = struct.unpack_from('<H', raw_data, start_idx)[0]
-
             start_idx += 2
             
-        sprite_data = raw_data[start_idx:]
-        
+        sprite_content = raw_data[start_idx:]
         
         if self.transparency:
-            
-            return self._decode_1098_rgba(sprite_data)
+            return self._decode_1098_rgba(sprite_content)
         else:
+            return self._decode_standard(sprite_content)
 
-            return self._decode_standard(sprite_data)        
+    def replace_sprite(self, sprite_id, image):
+        if sprite_id < 1: return
+        
+
+        if image.size != (32, 32):
+            image = image.resize((32, 32), Image.NEAREST)
+        if image.mode != 'RGBA':
+            image = image.convert('RGBA')
+
+        if self.transparency:
+            encoded_bytes = self._encode_1098_rgba(image) 
+            if encoded_bytes is None: 
+                 encoded_bytes = self._encode_standard(image)
+        else:
+            encoded_bytes = self._encode_standard(image)
             
+        full_data = bytearray()
+        size = len(encoded_bytes)
+        full_data.extend(struct.pack('<H', size))
+        full_data.extend(encoded_bytes)
+        
+        if sprite_id > self.sprite_count:
+            for i in range(self.sprite_count + 1, sprite_id):
+                self.sprites_data[i] = b''
+            self.sprite_count = sprite_id
+            
+        self.sprites_data[sprite_id] = bytes(full_data)
+        self.modified = True
 
     def _decode_standard(self, data):
         try:
             w, h = 32, 32
-            total_pixels = 1024
-            
             img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
             pixels = img.load()
-            
-            p = 0
-            x = 0
-            y = 0
-            drawn = 0
-            
-            if not data: return None
-
-            while p < len(data) and drawn < total_pixels:
+            p = 0; x = 0; y = 0; drawn = 0
+            while p < len(data) and drawn < 1024:
                 if p + 4 > len(data): break
-                
-                transparent = struct.unpack_from('<H', data, p)[0]
-                colored = struct.unpack_from('<H', data, p + 2)[0]
+                trans, colored = struct.unpack_from('<HH', data, p)
                 p += 4
-                
-                drawn += transparent
-                
-                current_pos = y * w + x + transparent
-                y = current_pos // w
-                x = current_pos % w
-
+                drawn += trans
+                current = y * w + x + trans
+                y, x = divmod(current, w)
                 if p + colored * 3 > len(data): break
-                
                 for _ in range(colored):
                     if y >= h: break
-                    
-                    r = data[p]
-                    g = data[p+1]
-                    b = data[p+2]
-                    
-
-                    pixels[x, y] = (r, g, b, 255)
-                    
-                    p += 3
-                    x += 1
-                    drawn += 1
-                    if x >= w:
-                        x = 0
-                        y += 1
-            
+                    pixels[x, y] = (data[p], data[p+1], data[p+2], 255)
+                    p += 3; x += 1; drawn += 1
+                    if x >= w: x=0; y+=1
             return img
-        except Exception as e:
-            print(f"DEBUG: Erro no decodestandard: {e}")
-            return None
+        except: return None
+        
+    def _encode_standard(self, image):
+        pixels = image.load()
+        width, height = image.size
+        
+        output = bytearray()
+        
+        transparent_count = 0
+        colored_pixels = []
+        
+        for y in range(height):
+            for x in range(width):
+                r, g, b, a = pixels[x, y]
+                
 
+                is_transparent = (a < 10) 
+                
+                if is_transparent:
+                    if colored_pixels:
+         
+                        output.extend(struct.pack('<HH', transparent_count, len(colored_pixels)))
+                        for cr, cg, cb in colored_pixels:
+                            output.extend(bytes([cr, cg, cb]))
+                        
+                        transparent_count = 0
+                        colored_pixels = []
+                    
+                    transparent_count += 1
+                else:
+                    colored_pixels.append((r, g, b))
+        
+        if colored_pixels or transparent_count > 0:
+            output.extend(struct.pack('<HH', transparent_count, len(colored_pixels)))
+            for cr, cg, cb in colored_pixels:
+                output.extend(bytes([cr, cg, cb]))
+                
+        return output
+        
     def _decode_1098_rgba(self, data):
+        """ Decodifica sprite com canal Alpha real (formato estendido) """
         try:
             w, h = 32, 32
             img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
@@ -431,38 +479,31 @@ class SprReader:
             drawn = 0
 
             while p + 4 <= len(data) and drawn < total_pixels:
-  
+
                 transparent, colored = struct.unpack_from('<HH', data, p)
                 p += 4
 
-   
                 drawn += transparent
                 for _ in range(transparent):
                     x += 1
                     if x >= w:
                         x = 0
                         y += 1
-                        if y >= h:
-                            break
-                            
-                if p + colored * 4 > len(data):
+                        if y >= h: break
+
+                if p + colored * 4 > len(data): 
                     break
 
-
                 for _ in range(colored):
-                    if y >= h:
-                        break
+                    if y >= h: break
 
                     r = data[p]
                     g = data[p+1]
                     b = data[p+2]
                     a = data[p+3]
-                    
-                
                     p += 4
-
-                    if a == 0:
-                        a = 255 
+                    
+                    if a == 0 and (r!=0 or g!=0 or b!=0): a = 255 
 
                     pixels[x, y] = (r, g, b, a)
 
@@ -471,16 +512,52 @@ class SprReader:
                     if x >= w:
                         x = 0
                         y += 1
-                        if y >= h:
-                            break
+                        if y >= h: break
 
             return img
 
         except Exception as e:
-            print("DEBUG: erro em _decode_1098_rgba:", e)
+            print("DEBUG: error in _decode_1098_rgba:", e)
             return None
 
+    def _encode_1098_rgba(self, image):
+        """ Codifica sprite para formato RGBA (4 bytes por pixel) """
+        pixels = image.load()
+        width, height = image.size
+        
+        output = bytearray()
+        
+        transparent_count = 0
+        colored_pixels = [] 
+        
+        for y in range(height):
+            for x in range(width):
+                r, g, b, a = pixels[x, y]
+                
 
+                is_transparent = (a == 0) 
+                
+                if is_transparent:
+
+                    if colored_pixels:
+                        output.extend(struct.pack('<HH', transparent_count, len(colored_pixels)))
+                        for cr, cg, cb, ca in colored_pixels:
+                            output.extend(bytes([cr, cg, cb, ca]))
+                        
+                        transparent_count = 0
+                        colored_pixels = []
+                    
+                    transparent_count += 1
+                else:
+                    colored_pixels.append((r, g, b, a))
+
+        if colored_pixels or transparent_count > 0:
+            output.extend(struct.pack('<HH', transparent_count, len(colored_pixels)))
+            for cr, cg, cb, ca in colored_pixels:
+                output.extend(bytes([cr, cg, cb, ca]))
+                
+        return output
+        
 class DatSprTab(ctk.CTkFrame):
     def __init__(self, parent):
         super().__init__(parent)
@@ -493,7 +570,7 @@ class DatSprTab(ctk.CTkFrame):
         self.visible_sprite_widgets = {}        
   
         self.editor = None  #  DatEditor
-        self.spr = None     #  SprReader
+        self.spr = None     #  SprEditor
         self.current_ids = []
         self.checkboxes = {}
 
@@ -610,9 +687,7 @@ class DatSprTab(ctk.CTkFrame):
             hover_color="#ffcfbf"
         )
         self.delete_id_button.pack(side="left", padx=5) 
-      
-                
-        
+                       
         self.load_dat_button = ctk.CTkButton(
             self.top_frame, 
             text="Load dat/spr (10.98)", 
@@ -630,7 +705,7 @@ class DatSprTab(ctk.CTkFrame):
         
         self.chk_extended = ctk.CTkCheckBox(self.top_frame, text="Extended")
         self.chk_extended.pack(side="left", padx=5)
-        self.chk_extended.select() #init true
+        self.chk_extended.select() #init extended true
 
         self.chk_transparency = ctk.CTkCheckBox(self.top_frame, text="Transparency")
         self.chk_transparency.pack(side="left", padx=5)        
@@ -678,29 +753,9 @@ class DatSprTab(ctk.CTkFrame):
         )
         self.attributes_frame.grid(row=0, column=0, padx=10, pady=5, sticky="nsew")
 
-        #Internal Flags
+        #Internal Flags/hide user
         INTERNAL_FLAGS = [
-            "Market", 
             "MarketItem", 
-            "UpgradeClassification", 
-            "Structure1098",
-            "Usable_Extended",
-            "Action_Extended",
-            "NoTrade",
-            "ReverseDesc",
-            "NoDrop",
-            "NoDivination",
-            "Wirable",
-            "TopOrder",
-            "TopOrder",
-            "Cloth",
-            "LyingCorpse",
-            "LyingObject",
-            "Translucent",
-            "Wrapable",
-            "Wrappable",
-            "Unwrapable",
-            "Unwrappable",
         ]
 
 
@@ -832,7 +887,7 @@ class DatSprTab(ctk.CTkFrame):
         
         self.anim_btn = ctk.CTkButton(
             self.prev_controls,
-            text="▶",  # Ícone de Play
+            text="▶",
             width=30,
             fg_color="#444444",
             command=self.toggle_animation
@@ -888,9 +943,7 @@ class DatSprTab(ctk.CTkFrame):
         self.context_menu.add_command(label="Replace", command=self.on_context_replace)
         self.context_menu.add_command(label="Clear", command=self.on_context_delete)
         self.right_click_target = None
-        
-        
-        
+              
     def show_context_menu(self, event, item_id, context_type):
         self.right_click_target = {"id": item_id, "type": context_type}
         try:
@@ -974,7 +1027,6 @@ class DatSprTab(ctk.CTkFrame):
                 self.load_single_id(target_id)
                 self.status_label.configure(text=f"ID {target_id} cleared successfully.", text_color="green")
 
-
         elif target_type == "sprite_list":
             messagebox.showinfo("Not Implemented", "Sprite clearing requires SPR write logic.\nImplement 'replace_sprite' first.")
             
@@ -984,11 +1036,38 @@ class DatSprTab(ctk.CTkFrame):
         messagebox.showinfo("Import", f"Import clicked for {target['type']} ID: {target['id']}\n(Feature not implemented yet)")
 
     def on_context_replace(self):
-        target = self.right_click_target
-        messagebox.showinfo("Replace", f"Replace clicked for {target['type']} ID: {target['id']}\n(Feature not implemented yet)")
+        if not self.right_click_target:
+            return
+            
+        target_id = self.right_click_target["id"]
+        target_type = self.right_click_target["type"]
         
+        if target_type != "sprite_list":
+            messagebox.showinfo("Info", "Replace is currently only supported for Sprite List direct editing.")
+            return
+
+        file_path = filedialog.askopenfilename(
+            title="Select Image",
+            filetypes=[("Image Files", "*.png *.jpg *.bmp")]
+        )
         
-        
+        if not file_path:
+            return
+
+        try:
+            new_image = Image.open(file_path)
+            
+            self.spr.replace_sprite(target_id, new_image)
+            
+            self.refresh_sprite_list()
+            self.status_label.configure(text=f"Sprite {target_id} replaced successfully.", text_color="green")
+            
+            if self.selected_sprite_id == target_id:
+                self.show_preview_at_index(self.current_preview_index)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to replace sprite: {e}")
+
         
     def on_category_change(self, choice):
         self.category_var.set(choice)        
@@ -1024,7 +1103,6 @@ class DatSprTab(ctk.CTkFrame):
             if new_id in self.editor.things['items']:
                 continue 
             
-            # texture mínimo válido: 1 sprite vazio
             empty_texture = (
                 b"\x01"  # width
                 b"\x01"  # height
@@ -1553,13 +1631,11 @@ class DatSprTab(ctk.CTkFrame):
                 self.show_loading("Found .spr file.\nLoading sprites...")
                 
                 if hasattr(self, 'spr') and self.spr:
-                    self.spr.close()
-
-                self.spr = SprReader(spr_path, transparency=is_transparency)
+                    pass  
+                self.spr = SprEditor(spr_path, transparency=self.chk_transparency.get())
                 self.spr.load()
 
-
-      
+    
                 self.preview_info.configure(
                     text=f"SPR loaded: {spr_path}\nSprites: {self.spr.sprite_count}"
                 )
@@ -1576,11 +1652,12 @@ class DatSprTab(ctk.CTkFrame):
             self.status_label.configure(text="Failed to load the file.", text_color="red")
 
         finally:
-
-           
             self.hide_loading()
             
-   
+            spr_count = 0
+            if hasattr(self, 'spr') and self.spr is not None:
+                spr_count = self.spr.sprite_count
+
             self.status_label.configure(
                 text=(
                     f"Files loaded! "
@@ -1588,13 +1665,11 @@ class DatSprTab(ctk.CTkFrame):
                     f"Outfits: {self.editor.counts['outfits']}  /  "
                     f"Effects: {self.editor.counts['effects']}  /  "
                     f"Missiles: {self.editor.counts['missiles']}  /  "
-                    f"Sprite Total: {self.spr.sprite_count}"
+                    f"Sprite Total: {spr_count}"
                 ),
                 text_color="cyan"
-            )           
-            
-            
-                            
+            )
+                           
     def parse_ids(self, id_string):
         ids = set()
         if not id_string: return []
@@ -1629,18 +1704,16 @@ class DatSprTab(ctk.CTkFrame):
             self.clear_preview()
             return
 
-        # CORREÇÃO: Usar o cat_map para pegar a chave correta (items, outfits, etc)
+
         cat_map = {"Item": "items", "Outfit": "outfits", "Effect": "effects", "Missile": "missiles"}
         current_cat_key = cat_map.get(self.category_var.get(), "items")
 
         self.status_label.configure(text=f"Consultando {len(self.current_ids)} IDs...", text_color="cyan")
         
-        # Passa a categoria correta para as funções
         self.update_checkboxes_for_ids(category=current_cat_key)
         self.status_label.configure(text=f"{len(self.current_ids)} IDs loaded...", text_color="white")
         self.prepare_preview_for_current_ids(category=current_cat_key)
 
-        # Atualização da lista visual (scroll e cores)
         first_id = self.current_ids[0]
         base_offset = 100 if current_cat_key == "items" else 1
         
@@ -1664,8 +1737,6 @@ class DatSprTab(ctk.CTkFrame):
                 self.ids_list_frame._parent_canvas.yview_moveto(scroll_pos)
             except Exception:
                 pass
-
-
 
     def update_checkboxes_for_ids(self, category="items"):
         if not self.current_ids: return
@@ -1800,10 +1871,9 @@ class DatSprTab(ctk.CTkFrame):
             
         try:
             val = int(val_str)
-            # (validações removidas para brevidade, mantenha as suas originais se quiser)
-                
+              
             for item_id in self.current_ids:
-                if item_id in self.editor.things[category]: # Usa a categoria dinâmica
+                if item_id in self.editor.things[category]:
                     props = self.editor.things[category][item_id]['props']
                     attr_name = data_key.replace("_data", "")
                     props[attr_name] = True
@@ -1873,32 +1943,27 @@ class DatSprTab(ctk.CTkFrame):
             self.editor.save(filepath)
             
             msg_extra = ""
-            
 
-            if self.spr and hasattr(self.spr, 'spr_path') and self.spr.spr_path:
-
+            if self.spr:
                 base_path = os.path.splitext(filepath)[0]
                 spr_dest_path = base_path + ".spr"
                 
 
-                if os.path.abspath(self.spr.spr_path) != os.path.abspath(spr_dest_path):
-                    shutil.copy2(self.spr.spr_path, spr_dest_path)
-                    msg_extra = f"\nAnd the .spr file was copied along with it."
-                else:
-                    msg_extra = "\n(.spr kept in the original location)"
+                self.spr.save(spr_dest_path)
+                
+                msg_extra = f"\nAnd the .spr file was compiled/saved to:\n{os.path.basename(spr_dest_path)}"
             else:
-                msg_extra = "\nWarning: No .spr was loaded to accompany it."
+                msg_extra = "\nWarning: No .spr was loaded/saved."
 
             self.status_label.configure(
-                text=f"Saved successfully: {os.path.basename(filepath)} (+spr)", 
+                text=f"Saved successfully: {os.path.basename(filepath)}", 
                 text_color="lightgreen"
             )
-            messagebox.showinfo("Success", f"The .dat file has been compiled!{msg_extra}")
+            messagebox.showinfo("Success", f"Files compiled successfully!{msg_extra}")
             
         except Exception as e:
             messagebox.showerror("Save Error", f"Could not save the file:\n{e}")
             self.status_label.configure(text="Failed to save files.", text_color="red")
-
 
     def prepare_preview_for_current_ids(self, category="items"):
         self.current_preview_sprite_list = []
