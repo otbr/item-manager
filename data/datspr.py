@@ -487,7 +487,9 @@ class DatSprTab(ctk.CTkFrame):
         self._kept_image = None        
         self.current_preview_sprite_list = [] 
         self.current_preview_index = 0
-        self.selected_sprite_id = None             
+        self.selected_sprite_id = None 
+        self.is_animating = False
+        self.anim_job = None          
         self.visible_sprite_widgets = {}        
   
         self.editor = None  #  DatEditor
@@ -502,6 +504,50 @@ class DatSprTab(ctk.CTkFrame):
         self.sprite_thumbs = {}
                 
         self.build_loading_overlay()
+        
+        
+    def toggle_animation(self):
+        if not self.current_preview_sprite_list:
+            return
+
+        self.is_animating = not self.is_animating
+
+        if self.is_animating:
+            self.anim_btn.configure(text="⏹", fg_color="#ff5555") # Ícone Stop, cor vermelha
+            self.animate_loop()
+        else:
+            self.anim_btn.configure(text="▶", fg_color="#444444") # Ícone Play, cor original
+            if self.anim_job:
+                self.after_cancel(self.anim_job)
+                self.anim_job = None
+
+    def animate_loop(self):
+        if not self.is_animating or not self.current_preview_sprite_list:
+            self.is_animating = False
+            self.anim_btn.configure(text="▶", fg_color="#444444")
+            return
+
+        # Calcula quantos frames existem no total para este item
+        group_size = self.current_item_width * self.current_item_height * self.current_item_layers
+        if group_size == 0: group_size = 1
+        total_views = len(self.current_preview_sprite_list) // group_size
+        
+        if total_views <= 1:
+            # Se só tem 1 frame, não precisa animar
+            self.toggle_animation()
+            return
+
+        # Avança para o próximo frame
+        next_index = self.current_preview_index + 1
+        if next_index >= total_views:
+            next_index = 0
+            
+        # Atualiza a visualização
+        self.show_preview_at_index(next_index)
+        
+        # Agenda o próximo frame (ex: 200ms de delay)
+        self.anim_job = self.after(200, self.animate_loop)
+        
         
        
     def build_ui(self):
@@ -770,7 +816,7 @@ class DatSprTab(ctk.CTkFrame):
      
     
         self.prev_controls = ctk.CTkFrame(self.preview_frame)
-        self.prev_controls.pack(padx=6, pady=6, fill="x")
+        self.prev_controls.pack(padx=6, pady=2, fill="x")
         
         self.prev_index_label = ctk.CTkLabel(self.prev_controls, text="Sprite 0 / 0")
         self.prev_index_label.pack(side="left", padx=4)
@@ -783,6 +829,7 @@ class DatSprTab(ctk.CTkFrame):
         )
         self.prev_prev_btn.pack(side="left", padx=4)
         
+        
         self.prev_next_btn = ctk.CTkButton(
             self.prev_controls, 
             text=">", 
@@ -790,6 +837,15 @@ class DatSprTab(ctk.CTkFrame):
             command=lambda: self.change_preview_index(1)
         )
         self.prev_next_btn.pack(side="left", padx=4)
+        
+        self.anim_btn = ctk.CTkButton(
+            self.prev_controls,
+            text="▶",  # Ícone de Play
+            width=30,
+            fg_color="#444444",
+            command=self.toggle_animation
+        )
+        self.anim_btn.pack(side="left", padx=4)        
         
         self.preview_info = ctk.CTkLabel(
             self.preview_frame, 
@@ -1067,6 +1123,7 @@ class DatSprTab(ctk.CTkFrame):
         current_start_id = start_index + start_id_offset
 
         max_id = total_count + 1
+        
         end_id = min(current_start_id + self.ids_per_page, max_id)
 
         for item_id in range(current_start_id, end_id):
@@ -1748,10 +1805,12 @@ class DatSprTab(ctk.CTkFrame):
         self.current_preview_sprite_list = []
         self.current_preview_index = 0
         
-        # Propriedades de composição do item atual
         self.current_item_width = 1
         self.current_item_height = 1
         self.current_item_layers = 1
+        
+        if self.is_animating:
+            self.toggle_animation()        
         
         if not self.editor or not self.spr or not self.current_ids:
             self.clear_preview()
@@ -1764,7 +1823,6 @@ class DatSprTab(ctk.CTkFrame):
             if not item:
                 continue
             
-            # Pegar dimensões da estrutura do item
             props = item.get('props', {})
             self.current_item_width = props.get('Width', 1)
             self.current_item_height = props.get('Height', 1)
@@ -1783,6 +1841,10 @@ class DatSprTab(ctk.CTkFrame):
         self.show_preview_at_index(self.current_preview_index) 
 
     def clear_preview(self):
+        
+        if self.is_animating:
+            self.toggle_animation()
+            
         try:
             self.image_label.configure(image=None, text="")
         except Exception:
@@ -1906,4 +1968,3 @@ class DatSprTab(ctk.CTkFrame):
 
     def hide_loading(self):
         self.loading_overlay.place_forget()
-
