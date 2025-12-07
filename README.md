@@ -15,8 +15,9 @@ Warning: Project is still EXPERIMENTAL – expect bugs, freezes and occasional c
 Features:
 
 - Support
-  - Transparency (New)
-  - Extended     (New)
+  - Transparency 
+  - Extended
+  - Only 1098, it is not recommended for other versions.
 
 - Image Enhancer
   - Upscale: 2, 4, 8
@@ -30,22 +31,27 @@ Features:
     - Rotation
  
 - Spr/Dat Editor (EXPERIMENTAL)
-  - Edit Id
+  - Edit Item/Outfit/Missile/Effects
   - Flags Adjust
   - Mass Edit/Delete
+  - Import
+  - Export
   
 - OTB Reload (Dont Work)
   - Flags Reload/Sync
-  
-Manipulating the dat and spr files is only 
-possible for versions 10.98; 
-it is not recommended for other versions.
+
 
 #   ---------- Required ----------
 
 - Python 3.10+
   - py -m pip install pillow customtkinter numpy nuitka
   - https://github.com/lltcggie/waifu2x-caffe/releases/tag/1.2.0.4
+
+
+  - Resolution: 1920x1080
+  - 2gb Ram
+  - Processor Dual Core
+  - Hd: 4gb
 
   
 #   ---------- Structure ----------
@@ -59,8 +65,6 @@ Put waifu2x-caffe release on ItemManager/waifu2x-caffe
 
 
 <img width="651" height="157" alt="Screenshot_1" src="https://github.com/user-attachments/assets/ebc5c328-0520-4f92-b08c-3f8133d47e31" />
-
-
 
 #   ---------- Server-Side/Client-Side ----------
 
