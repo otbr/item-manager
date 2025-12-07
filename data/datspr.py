@@ -900,9 +900,7 @@ class DatSprTab(ctk.CTkFrame):
         self.context_menu.add_command(label="Clear", command=self.on_context_delete)
         self.right_click_target = None
         
-        
-        
-        
+         
     def toggle_animation(self):
         if not self.current_preview_sprite_list:
             return
@@ -947,7 +945,6 @@ class DatSprTab(ctk.CTkFrame):
         self.configure(cursor="hand2") 
 
     def on_drag_end(self, event):
-        """Finaliza o arraste e verifica se soltou no alvo"""
         self.configure(cursor="")
         
         if self.dragged_sprite_id is None:
@@ -955,58 +952,82 @@ class DatSprTab(ctk.CTkFrame):
 
         x_root, y_root = self.winfo_pointerxy()
         
-        preview_x = self.image_label.winfo_rootx()
-        preview_y = self.image_label.winfo_rooty()
-        preview_w = self.image_label.winfo_width()
-        preview_h = self.image_label.winfo_height()
+        lbl_x = self.image_label.winfo_rootx()
+        lbl_y = self.image_label.winfo_rooty()
+        lbl_w = self.image_label.winfo_width()
+        lbl_h = self.image_label.winfo_height()
 
-        if (preview_x <= x_root <= preview_x + preview_w) and \
-           (preview_y <= y_root <= preview_y + preview_h):
+        if (lbl_x <= x_root <= lbl_x + lbl_w) and (lbl_y <= y_root <= lbl_y + lbl_h):
             
-            self.on_drop_success(self.dragged_sprite_id)
-        
+            if not self.editor or not self.current_ids:
+                return
+
+            target_id = self.current_ids[0]
+            cat_map = {"Item": "items", "Outfit": "outfits", "Effect": "effects", "Missile": "missiles"}
+            cat = cat_map.get(self.category_var.get(), "items")
+            
+            if target_id in self.editor.things[cat]:
+                props = self.editor.things[cat][target_id]['props']
+                
+                width_sprites = props.get('Width', 1)
+                height_sprites = props.get('Height', 1)
+                
+                rel_x = x_root - lbl_x
+                rel_y = y_root - lbl_y
+                
+                cell_w = lbl_w / width_sprites
+                cell_h = lbl_h / height_sprites
+                
+                grid_x = int(rel_x // cell_w)
+                grid_y = int(rel_y // cell_h)
+                
+                grid_x = max(0, min(grid_x, width_sprites - 1))
+                grid_y = max(0, min(grid_y, height_sprites - 1))
+                inverted_y = height_sprites - 1 - grid_y
+                
+                inverted_x = width_sprites - 1 - grid_x 
+                
+                clicked_index = (inverted_y * width_sprites) + inverted_x             
+                sprites_per_frame = width_sprites * height_sprites
+                final_index = (self.current_preview_index * sprites_per_frame) + clicked_index
+                
+                self.on_drop_success(self.dragged_sprite_id, final_index)
+
         self.dragged_sprite_id = None
 
-    def on_drop_success(self, sprite_id):
+    def on_drop_success(self, sprite_id, target_index):
         if not self.editor or not self.current_ids:
-            messagebox.showwarning("Aviso", "Selecione um ID (Item/Outfit) primeiro para editar.")
             return
             
-        target_id = self.current_ids[0] 
-        
+        target_item_id = self.current_ids[0]
         cat_map = {"Item": "items", "Outfit": "outfits", "Effect": "effects", "Missile": "missiles"}
         category = cat_map.get(self.category_var.get(), "items")
         
-        if target_id not in self.editor.things[category]:
-            return
+        thing = self.editor.things[category].get(target_item_id)
+        if not thing: return
 
-        thing = self.editor.things[category][target_id]
-        
         current_sprites = DatEditor.extract_sprite_ids_from_texture_bytes(thing['texture_bytes'])
 
         if not current_sprites:
-            current_sprites = [sprite_id]
-        else:
-            idx = self.current_preview_index
-            
-            if idx < len(current_sprites):
-                current_sprites[idx] = sprite_id
-                print(f"Substituindo indice {idx} pelo sprite {sprite_id}")
-            else:
-                current_sprites[0] = sprite_id
+            current_sprites = [0] * (target_index + 1)
+        
+        if target_index >= len(current_sprites):
+            extension = [0] * (target_index - len(current_sprites) + 1)
+            current_sprites.extend(extension)
 
+        print(f"Alterando Sprite no Indice Global {target_index} para ID {sprite_id}")
+        current_sprites[target_index] = sprite_id
+        
         try:
-            new_texture_bytes = self.rebuild_texture_bytes(thing['texture_bytes'], current_sprites)
-            thing['texture_bytes'] = new_texture_bytes
+            new_bytes = self.rebuild_texture_bytes(thing['texture_bytes'], current_sprites)
+            thing['texture_bytes'] = new_bytes
             
-            self.status_label.configure(text=f"Sprite {sprite_id} aplicado ao ID {target_id}!", text_color="#00ff00")
-            
-            self.load_single_id(target_id)
+            self.load_single_id(target_item_id)
             
         except Exception as e:
-            messagebox.showerror("Erro", f"Erro ao aplicar textura: {e}")
-            
-            
+            messagebox.showerror("Erro", f"Erro ao atualizar sprite: {e}")
+
+           
     def rebuild_texture_bytes(self, original_bytes, new_sprite_ids):
         if not original_bytes:
 
