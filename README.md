@@ -17,6 +17,7 @@ Features:
 - Support
   - Transparency 
   - Extended
+  - Extension .obd (Object Builder)
   - Only 1098, it is not recommended for other versions.
 
 - Image Enhancer
@@ -35,7 +36,7 @@ Features:
   - Flags Adjust
   - Mass Edit/Delete
   - Slicer (Obd Style)
-  - Sprite Optmizer
+  - Sprite Optmizer (Obd Style)
   - Import
   - Export
   
