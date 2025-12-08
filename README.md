@@ -2,15 +2,15 @@
 Editor spr and dat, upscale images and resizes.
 
 Warning: Project is still EXPERIMENTAL – expect bugs, freezes and occasional crashes.
+#   ---------- NEW INTERFACE ----------
+
+<img width="1917" height="1036" alt="Screenshot_1" src="https://github.com/user-attachments/assets/bc95a365-b253-4524-9f07-acf1d6b62029" />
 
 
-<img width="1919" height="1040" alt="Screenshot_11" src="https://github.com/user-attachments/assets/f2f14cd6-196b-44ef-bef2-51e7f0d3095a" />
+<img width="1919" height="1042" alt="Screenshot_2" src="https://github.com/user-attachments/assets/dce9deee-b36d-419c-8302-6641790b81d1" />
 
 
-<img width="1919" height="1039" alt="Screenshot_10" src="https://github.com/user-attachments/assets/566dd54e-46e1-4204-859f-ad835cc3e5ef" />
-
-
-<img width="1919" height="1042" alt="Screenshot_12" src="https://github.com/user-attachments/assets/2a1dbad9-e7e6-4903-8e52-68f564acfa5f" />
+<img width="1919" height="1036" alt="Screenshot_4" src="https://github.com/user-attachments/assets/a3398240-bcd3-4648-b1bf-2dcc07fd6b27" />
 
 Features:
 
