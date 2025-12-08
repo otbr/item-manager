@@ -13,7 +13,9 @@ import atexit
 
 
 from sliceObd import SliceWindow  
-from spriteOptmizer import SpriteOptimizerWindow  
+from spriteOptmizer import SpriteOptimizerWindow 
+from obdHandler import ObdHandler
+ 
 
 
 METADATA_FLAGS = {
@@ -1150,8 +1152,43 @@ class DatSprTab(QWidget):
         self.anim_timer.timeout.connect(self.animate_loop)
         self.anim_timer.setSingleShot(True)
         self.anim_timer.start(100)
+
         
-  
+        
+    def build_texture_bytes(self, width, height, layers, px, py, pz, frames, sprite_ids):
+        out = bytearray()
+        
+        out.extend(struct.pack('<BB', width, height))
+        
+        if width > 1 or height > 1:
+            out.append(32) 
+            
+        out.extend(struct.pack('<BBBBB', layers, px, py, pz, frames))
+        
+        if frames > 1:
+            out.append(0) # Async/Mode
+            out.extend(struct.pack('<I', 0)) # Loop Count
+            out.append(0) # Start Frame
+            for _ in range(frames):
+                out.extend(struct.pack('<I', 75)) 
+
+        use_extended = self.editor.extended 
+        fmt = '<I' if use_extended else '<H'
+        
+        for sid in sprite_ids:
+            out.extend(struct.pack(fmt, sid))
+            
+        return bytes(out)
+        
+    def get_current_category_key(self):
+        cat_map = {
+            "Item": "items", 
+            "Outfit": "outfits", 
+            "Effect": "effects", 
+            "Missile": "missiles"
+        }
+        return cat_map.get(self.category_combo.currentText(), "items")
+ 
            
     def rebuild_texture_bytes(self, original_bytes, new_sprite_ids):
         if not original_bytes:
@@ -1196,48 +1233,65 @@ class DatSprTab(QWidget):
             self.context_menu.exec(QPoint(event.x(), event.y()))
 
     def on_context_export(self):
-        if not self.right_click_target:
+        if not self.current_ids:
             return
             
-        target_id = self.right_click_target["id"]
-        target_type = self.right_click_target["type"]
-        try:
-            img_to_save = None
-            default_name = ""
+        target_id = self.current_ids[0]
+        cat_key = self.get_current_category_key()
+        
+        # Mapeia nome da categoria interna para o nome do OB
+        ob_type_map = {
+            "items": "Item", "outfits": "Outfit", 
+            "effects": "Effect", "missiles": "Missile"
+        }
+        ob_type = ob_type_map.get(cat_key, "Item")
 
-            if target_type == "sprite_list":
-                if self.spr:
-                    img_to_save = self.spr.get_sprite(target_id)
-                    default_name = f"sprite_{target_id}.png"
-            
-            elif target_type == "id_list":
-                cat_map = {"Item": "items", "Outfit": "outfits", "Effect": "effects", "Missile": "missiles"}
-                current_cat_key = cat_map.get(self.category_combo.currentText(), "items")
-                
-                if self.editor and target_id in self.editor.things[current_cat_key]:
-                    item = self.editor.things[current_cat_key][target_id]
-                    sprite_ids = DatEditor.extract_sprite_ids_from_texture_bytes(item['texture_bytes'])
-                    if sprite_ids and sprite_ids[0] > 0 and self.spr:
-                        img_to_save = self.spr.get_sprite(sprite_ids[0])
-                        default_name = f"{current_cat_key}_{target_id}.png"
+        thing = self.editor.things[cat_key].get(target_id)
+        if not thing: 
+            QMessageBox.warning(self, "Erro", "Item não encontrado.")
+            return
 
-            if img_to_save:
-                save_path, _ = QFileDialog.getSaveFileName(
-                    self,
-                    "Export Image",
-                    default_name,
-                    "PNG Image (*.png)"
-                )
-                if save_path:
-                    img_to_save.save(save_path)
-                    QMessageBox.information(self, "Export", f"Saved to {save_path}")
-            else:
-                QMessageBox.warning(self, "Export", "No image data found for this ID.")
+        file_path, filter_used = QFileDialog.getSaveFileName(
+            self, f"Export {ob_type}", f"{target_id}", 
+            "Object Builder (*.obd);;Images (*.png)"
+        )
+        
+        if not file_path: return
 
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to export: {e}")
-            
-            
+        # --- EXTRAÇÃO DE SPRITES ---
+        # Usa o método estático do editor para ler os IDs dos bytes brutos
+        texture_bytes = thing.get('texture_bytes', b'')
+        sprite_ids = self.editor.extract_sprite_ids_from_texture_bytes(texture_bytes)
+        
+        images = []
+        if not sprite_ids:
+            # Se não achou IDs nos bytes, tenta uma abordagem de fallback ou alerta
+            # Pode acontecer se o item for invisível ou dados corrompidos
+            print("Aviso: Nenhuma sprite encontrada nos dados do item.")
+        else:
+            for sid in sprite_ids:
+                img = self.spr.get_sprite(sid)
+                if img:
+                    images.append(img)
+                else:
+                    # Sprite ID existe mas não tem imagem no SPR (vazio)
+                    # Adiciona transparente 32x32 para manter a sincronia da animação
+                    images.append(Image.new("RGBA", (32, 32), (0,0,0,0)))
+
+        # --- SALVAR ---
+        if filter_used == "Object Builder (*.obd)" or file_path.endswith(".obd"):
+            try:
+                # Passa o ob_type correto (Item/Outfit)
+                ObdHandler.save_obd(file_path, thing['props'], images, ob_type)
+                QMessageBox.information(self, "Sucesso", f"Exportado {len(images)} sprites para OBD.")
+            except Exception as e:
+                QMessageBox.critical(self, "Erro", f"Falha ao salvar OBD: {e}")
+        else:
+            # Exportação PNG (Opcional, se você tiver o método auxiliar)
+            # self.export_as_png_sheet(file_path, images) 
+            pass
+
+   
     def on_context_delete(self):
         if not self.right_click_target:
             return
@@ -1279,32 +1333,69 @@ class DatSprTab(QWidget):
             
 
     def on_context_import(self):
-        if not self.spr:
-            QMessageBox.warning(self, "Aviso", "Nenhum arquivo .spr carregado.")
-            return
+        if not self.current_ids: return
+        target_id = self.current_ids[0]
+        cat_key = self.get_current_category_key()
 
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Importar Sprite",
-            "",
-            "Imagens (*.png *.bmp)"
+        file_path, filter_used = QFileDialog.getOpenFileName(
+            self, "Import Item", "", 
+            "Supported Files (*.png *.jpg *.obd);;Object Builder (*.obd);;Images (*.png *.jpg)"
         )
         
-        if not file_path:
-            return
+        if not file_path: return
 
-        try:
-            new_image = Image.open(file_path)         
-            new_id = self.spr.sprite_count + 1            
-            self.spr.replace_sprite(new_id, new_image)           
-            self.status_label.setText(f"Sprite {new_id} importado com sucesso.")
-            self.status_label.setStyleSheet("color: green;")           
-            self.select_sprite(new_id)
+        new_props = {}
+        new_images = []
 
-        except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Falha ao importar sprite: {e}")
+        if file_path.endswith(".obd"):
+            new_props, new_images = ObdHandler.load_obd(file_path)
+            if not new_images:
+                QMessageBox.warning(self, "Aviso", "OBD parece vazio ou inválido.")
+                return
+        else:
+            try:
+                img = Image.open(file_path).convert("RGBA")
 
-        self.hide_loading()
+                new_images = [img] 
+            except Exception as e:
+                QMessageBox.critical(self, "Erro", f"Erro ao abrir imagem: {e}")
+                return
+
+        if new_props:
+            current_props = self.editor.things[cat_key][target_id]['props']
+            current_props.update(new_props)
+            self.load_ids_from_entry() 
+
+        new_sprite_ids = []
+        last_spr_id = self.spr.sprite_count
+        
+        for pil_img in new_images:
+
+            if pil_img.size != (32, 32):
+                pil_img = pil_img.resize((32, 32))
+                
+            last_spr_id += 1
+            self.spr.replace_sprite(last_spr_id, pil_img)
+            new_sprite_ids.append(last_spr_id)
+            
+        self.status_label.setText(f"Sprites adicionadas ao SPR. IDs: {new_sprite_ids[0]} - {new_sprite_ids[-1]}")
+
+    
+        width = 1
+        height = 1
+        layers = 1
+        pattern_x = 1
+        pattern_y = 1
+        pattern_z = 1
+        frames = len(new_sprite_ids)
+        
+        new_texture_bytes = self.build_texture_bytes(width, height, layers, pattern_x, pattern_y, pattern_z, frames, new_sprite_ids)
+        
+        self.editor.things[cat_key][target_id]['texture_bytes'] = new_texture_bytes
+        
+        self.on_preview_click() 
+        QMessageBox.information(self, "Importado", "Dados importados com sucesso!")
+
         
     def on_context_replace(self):
         if not self.right_click_target:
