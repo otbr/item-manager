@@ -34,6 +34,8 @@ Features:
   - Edit Item/Outfit/Missile/Effects
   - Flags Adjust
   - Mass Edit/Delete
+  - Slicer (Obd Style)
+  - Sprite Optmizer
   - Import
   - Export
   
