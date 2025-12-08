@@ -15,7 +15,7 @@ if data_path not in sys.path:
     sys.path.append(data_path)
 
 from ImageUpscale import ImageUpscaleTab 
-from OtbReload import OtbReloadTab
+from otbReload import OtbReloadTab
 from datspr import DatSprTab
 
 class App(QMainWindow):
