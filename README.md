@@ -16,9 +16,18 @@ Features:
   - Extension .obd (Object Builder)
   - Only 1098, it is not recommended for other versions.
 
+- Spr/Dat Editor (EXPERIMENTAL)
+  - Edit Item/Missile/Effects
+  - Edit Outfits (planned)
+  - Flags Adjust
+  - Mass Edit/Delete
+  - Sprite Optmizer
+  - Import
+  - Export
+
 - Sprite Editor
   - Upscale: 2, 4, 8
-  - Denoise Level: 1, 2, 3 
+  - Denoise
   - Resize Image
   - Custom Size
   - Image Edit
@@ -32,18 +41,8 @@ Features:
     - Eraser Tools
     - Selection tools
     - Outline/Adjust
-
-- Layers Panel
-- Export Project
- 
-- Spr/Dat Editor (EXPERIMENTAL)
-  - Edit Item/Outfit/Missile/Effects
-  - Flags Adjust
-  - Mass Edit/Delete
-  - Slicer (Obd Style)
-  - Sprite Optmizer (Obd Style)
-  - Import
-  - Export
+    - Layers Panel
+    - Export Project
   
 - OTB Reload (Dont Work)
   - Flags Reload/Sync
@@ -53,7 +52,7 @@ Features:
 
   - Resolution: 1920x1080
   - 8gb Ram
-  - Processor Dual Core
+  - Processor Quad-Core
   - Hd: 4gb
 
 ```bash
