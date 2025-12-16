@@ -1,3 +1,4 @@
+# py -m pip install requirements
 import sys
 import os
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
@@ -22,9 +23,10 @@ class App(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("Item Manager")
+        
         self.resize(900, 1000)
-
-        icon_path = os.path.join(base_path, "ItemManagerIco.ico")
+        
+        icon_path = os.path.join(data_path, "ItemManagerIco.ico")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
 
@@ -39,12 +41,13 @@ class App(QMainWindow):
 
         self.tab_view = QTabWidget()
         layout.addWidget(self.tab_view)
-        
-        # tab 1
+
+
         self.datspr_module = DatSprTab()
+
+        
         self.tab_view.addTab(self.datspr_module, "Spr/Dat Editor")
 
-        # tab 2
         self.tab_otbreload = QWidget()
         self.tab_view.addTab(self.tab_otbreload, "Otb Reload")
         
@@ -53,8 +56,9 @@ class App(QMainWindow):
         otb_layout.addWidget(self.otb_module)
 
 def set_dark_theme(app):
-    """Configura um tema escuro estilo Fusion"""
+
     app.setStyle("Fusion")
+    
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
     palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
@@ -74,26 +78,21 @@ def set_dark_theme(app):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     
-    # Aplica o tema escuro
     set_dark_theme(app)
 
-    # Lógica da Splash Screen
-    splash_path = os.path.join(base_path, "ItemManagersplash.png")
+    splash_path = os.path.join(data_path, "ItemManagersplash.png")  
     splash_pixmap = QPixmap(splash_path)
 
     if not splash_pixmap.isNull():
         splash = QSplashScreen(splash_pixmap, Qt.WindowType.WindowStaysOnTopHint)
         splash.show()
         
-        # Função para iniciar a janela principal após o delay
         def show_main_window():
-            # Precisamos declarar main_window como global para o Garbage Collector não limpar
             global main_window
             main_window = App()
-            main_window.showMaximized() # Equivalente ao state('zoomed')
-            splash.finish(main_window) # Fecha o splash quando a main window abrir
+            main_window.showMaximized()
+            splash.finish(main_window)
 
-        # Configura timer de 3 segundos (3000ms)
         QTimer.singleShot(3000, show_main_window)
     else:
         print("Erro ao carregar imagem de splash. Iniciando diretamente.")
