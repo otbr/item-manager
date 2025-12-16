@@ -1081,10 +1081,10 @@ class DatSprTab(QWidget):
             (1, 0, "W", "←"),
             (1, 2, "E", "→"),
             (2, 1, "S", "↓"),
-            # (0, 0, "NW", "↖")
-            # (2, 0, "SW", "↙")
-            # (0, 2, "NE", "↗")
-            # (2, 2, "SE", "↘")
+            (0, 0, "NW", "↖"),
+            (2, 0, "SW", "↙"),
+            (0, 2, "NE", "↗"),
+            (2, 2, "SE", "↘"),
             # (1, 1, "C", "•")
         ]
 
@@ -1119,7 +1119,7 @@ class DatSprTab(QWidget):
         self.mask_btn.setFixedSize(55, 55)
         addon_layout.addWidget(self.mask_btn)
 
-        self.layer_btn = QPushButton("View Layer")
+        self.layer_btn = QPushButton("Group")
         self.layer_btn.setCheckable(True)
         self.layer_btn.setFixedSize(55, 55)
         addon_layout.addWidget(self.layer_btn)
@@ -1917,9 +1917,22 @@ class DatSprTab(QWidget):
         self.hide_loading()
 
     def on_category_change(self, text):
-        self.ids_list_frame.scroll_layout.itemAt(0).widget().hide()
+        # Esconde o widget anterior da lista de IDs
+        if self.ids_list_frame.scroll_layout.count() > 0:
+            widget = self.ids_list_frame.scroll_layout.itemAt(0).widget()
+            if widget:
+                widget.hide()
+        
+        # Limpa a seleção atual
         self.current_ids = []
-        self.load_ids_from_entry()
+        
+        # Atualiza ambas as listas
+        self.refresh_id_list()  # Atualiza a lista de IDs da nova categoria
+        self.refresh_sprite_list()  # Mantém a lista de sprites visível
+        
+        # Limpa o preview
+        self.clear_preview()
+
 
     def insert_ids(self):
         if not self.editor:
