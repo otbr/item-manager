@@ -3,13 +3,21 @@ Item Manager is a .dat and .spr file editor for 2D MMORPGs, focusing on the TopD
 
 Warning: Project is still EXPERIMENTAL – expect bugs, freezes and occasional crashes.
 
-#   ---------- NEW INTERFACE ----------
+#   ---------- INTERFACE ----------
 
-<img width="1919" height="1040" alt="Screenshot_2" src="https://github.com/user-attachments/assets/237c2464-cded-4f81-a7e7-6cdae3c6f865" />
+Features:<img width="1919" height="1043" alt="Screenshot_1" src="https://github.com/user-attachments/assets/295cc19b-dc71-46d7-9474-e6673095f9e1" />
 
-<img width="1919" height="1036" alt="Screenshot_4" src="https://github.com/user-attachments/assets/a3398240-bcd3-4648-b1bf-2dcc07fd6b27" />
+<img width="1919" height="1041" alt="Screenshot_2" src="https://github.com/user-attachments/assets/d40eb06e-73ae-47a5-93b3-4bf167f04794" />
 
-Features:
+
+<img width="1919" height="1041" alt="Screenshot_3" src="https://github.com/user-attachments/assets/a20a4394-d9b9-4f9d-8e3e-f060b3d2e853" />
+
+
+<img width="874" height="891" alt="Screenshot_4" src="https://github.com/user-attachments/assets/5ae0f73c-b358-433a-9008-744ef33b54ec" />
+
+
+<img width="1242" height="957" alt="Screenshot_5" src="https://github.com/user-attachments/assets/9983b2ec-93a7-4a7f-85e1-8e48eaa65502" />
+
 
 - Support
   - Transparency 
