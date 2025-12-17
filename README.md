@@ -1,5 +1,5 @@
 #   ---------- Item Manager ----------
-Item Manager is a .dat and .spr file editor for 2D MMORPGs, focusing on the TopDown style. The tool is designed to provide a robust and efficient interface for manipulating game resources, allowing the reading and editing of item assets, creatures, and other graphical elements (Missiles and Effects). It also includes an Image Editor to enhance its efficiency.
+Item Manager is a .dat and .spr file editor for 2D MMORPGs, focusing on the 45/TopDown style. The tool is designed to provide a robust and efficient interface for manipulating game resources, allowing the reading and editing of item assets, creatures, and other graphical elements (Missiles and Effects). It also includes an Image Editor to enhance its efficiency.
 
 Warning: Project is still EXPERIMENTAL – expect bugs, freezes and occasional crashes.
 
