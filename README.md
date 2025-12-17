@@ -24,6 +24,8 @@ Features:
   - Sprite Optmizer
   - Import
   - Export
+  
+- LookType Generator 
 
 - Sprite Editor
   - Upscale: 2, 4, 8
@@ -46,6 +48,7 @@ Features:
   
 - OTB Reload (Dont Work)
   - Flags Reload/Sync
+  
 
   #   ---------- PLANNED ----------
 
@@ -56,6 +59,5 @@ Features:
   - Extension .obd (Object Builder)
   - Extension .itm (Item Manager)
   - Support Assets (Canary)
-  - LookType Maker 
   - Monster Maker (Maybe)
   - Spell Maker   (Maybe)
