@@ -6,8 +6,14 @@ import shutil
 import struct
 import sys
 import uuid
+
 from collections import OrderedDict
 from copy import deepcopy
+
+from spell_maker import SpellMakerWindow
+from looktype_generator import LookTypeGeneratorWindow
+from monster_generator import MonsterGeneratorWindow
+
 
 from obdHandler import ObdHandler
 from PIL import Image, ImageDraw, ImageFilter
@@ -1392,7 +1398,15 @@ class DatSprTab(QWidget):
         
         self.looktype_gen_button = QPushButton("LookType Generator")
         self.looktype_gen_button.clicked.connect(self.open_looktype_generator)
-        id_operations_frame.addWidget(self.looktype_gen_button)        
+        id_operations_frame.addWidget(self.looktype_gen_button) 
+
+        self.monster_gen_button = QPushButton("Monster Generator")
+        self.monster_gen_button.clicked.connect(self.open_monster_generator)
+        id_operations_frame.addWidget(self.monster_gen_button) 
+
+        self.spell_maker_button = QPushButton("Spell Maker")
+        self.spell_maker_button.clicked.connect(self.open_spell_maker)
+        id_operations_frame.addWidget(self.spell_maker_button)         
 
         bottom_frame.addLayout(id_operations_frame)
 
@@ -1425,16 +1439,26 @@ class DatSprTab(QWidget):
         self.ids_per_page = 1000
         self.current_page = 0
         
+  
+    def open_monster_generator(self):
+        self.monster_win = MonsterGeneratorWindow(
+        )
+        self.monster_win.show()
         
+        
+    def open_spell_maker(self):
+        self.spell_win = SpellMakerWindow(
+        )
+        self.spell_win.show()        
+    
     def open_looktype_generator(self):
         if not self.spr or not self.editor:
             QMessageBox.warning(
                 self, "Warning", "Upload the DAT and SPR files first.."
             )
             return
-        
-        from looktype_generator import LookTypeGeneratorWindow
-        
+       
+
         self.looktype_win = LookTypeGeneratorWindow(
             spr_editor=self.spr,
             dat_editor=self.editor,
