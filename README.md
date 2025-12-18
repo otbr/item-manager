@@ -38,7 +38,8 @@ Warning: Project is still EXPERIMENTAL – expect bugs, freezes and occasional c
   - Export
   
 - NPC XML Generator 
-- Monster XML Generator 
+- Monster XML Generator
+- Spell Maker
 
 - Sprite Editor
   - Upscale: 2, 4, 8
@@ -72,7 +73,7 @@ Warning: Project is still EXPERIMENTAL – expect bugs, freezes and occasional c
   - Extension .obd (Object Builder)
   - Extension .itm (Item Manager)
   - Support Assets (Canary)
-  - Spell Maker   (Maybe)
+
 
 
 
