@@ -10,14 +10,18 @@ import uuid
 from collections import OrderedDict
 from copy import deepcopy
 
+from shader import ShaderEditor
 from spell_maker import SpellMakerWindow
 from looktype_generator import LookTypeGeneratorWindow
 from monster_generator import MonsterGeneratorWindow
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ICON_PATH = os.path.join(BASE_DIR, "..", "assets", "window")
+
 
 from obdHandler import ObdHandler
 from PIL import Image, ImageDraw, ImageFilter
-from PyQt6.QtCore import QMimeData, QPoint, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QMimeData, QPoint, Qt, QTimer, pyqtSignal, QSize
 from PyQt6.QtGui import (
     QColor,
     QContextMenuEvent,
@@ -63,6 +67,9 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+
+
 from spriteEditor import SliceWindow
 from spriteOptmizer import SpriteOptimizerWindow
 
@@ -1372,56 +1379,99 @@ class DatSprTab(QWidget):
 
         id_operations_frame = QHBoxLayout()
         id_operations_frame.addWidget(QLabel("Manage IDs:"))
-
+        
+        
         self.id_operation_entry = QLineEdit()
         self.id_operation_entry.setPlaceholderText("ID (ex: 100-105)")
         self.id_operation_entry.setMaximumWidth(120)
         id_operations_frame.addWidget(self.id_operation_entry)
 
-        self.insert_id_button = QPushButton("Insert ID")
-        self.insert_id_button.setStyleSheet("background-color: #00b300;")
+        self.insert_id_button = QPushButton()
+        self.insert_id_button.setIcon(QIcon(os.path.join(ICON_PATH, "new.png")))
+        self.insert_id_button.setIconSize(QSize(24, 24))
+        self.insert_id_button.setToolTip("Insert ID")
         self.insert_id_button.clicked.connect(self.insert_ids)
         id_operations_frame.addWidget(self.insert_id_button)
-
-        self.delete_id_button = QPushButton("Delete ID")
-        self.delete_id_button.setStyleSheet("background-color: #ff2626;")
-        self.delete_id_button.clicked.connect(self.delete_ids)
+                       
+        self.delete_id_button = QPushButton()
+        self.delete_id_button.setIcon(QIcon(os.path.join(ICON_PATH, "delete.png")))
+        self.delete_id_button.setIconSize(QSize(24, 24))
+        self.delete_id_button.setToolTip("Delete ID")
+        self.delete_id_button.clicked.connect(self.insert_ids)
         id_operations_frame.addWidget(self.delete_id_button)
-
-        self.slicer_id_button = QPushButton("Sprite Editor")
-        self.slicer_id_button.clicked.connect(self.open_slicer)
-        id_operations_frame.addWidget(self.slicer_id_button)
-
-        self.optimizer_button = QPushButton("Sprite Optimizer")
-        self.optimizer_button.clicked.connect(self.open_optimizer)
-        id_operations_frame.addWidget(self.optimizer_button)
+ 
+        self.slicer_id_button = QPushButton()
+        self.slicer_id_button.setIcon(QIcon(os.path.join(ICON_PATH, "spriteEditor.png")))
+        self.slicer_id_button.setIconSize(QSize(24, 24))
+        self.slicer_id_button.setToolTip("Sprite Editor")
+        self.slicer_id_button.clicked.connect(self.insert_ids)
+        id_operations_frame.addWidget(self.slicer_id_button) 
+          
+        self.optimizer_button = QPushButton()
+        self.optimizer_button.setIcon(QIcon(os.path.join(ICON_PATH, "hash.png")))
+        self.optimizer_button.setIconSize(QSize(24, 24))
+        self.optimizer_button.setToolTip("Sprite Optimizer")
+        self.optimizer_button.clicked.connect(self.insert_ids)
+        id_operations_frame.addWidget(self.optimizer_button)  
         
-        self.looktype_gen_button = QPushButton("LookType Generator")
+        self.looktype_gen_button = QPushButton()
+        self.looktype_gen_button.setIcon(QIcon(os.path.join(ICON_PATH, "looktype.png")))
+        self.looktype_gen_button.setIconSize(QSize(24, 24))
+        self.looktype_gen_button.setToolTip("LookType Generator")
         self.looktype_gen_button.clicked.connect(self.open_looktype_generator)
-        id_operations_frame.addWidget(self.looktype_gen_button) 
-
-        self.monster_gen_button = QPushButton("Monster Generator")
+        id_operations_frame.addWidget(self.looktype_gen_button)      
+     
+        self.monster_gen_button = QPushButton()
+        self.monster_gen_button.setIcon(QIcon(os.path.join(ICON_PATH, "monster.png")))
+        self.monster_gen_button.setIconSize(QSize(24, 24))
+        self.monster_gen_button.setToolTip("Monster Generator")
         self.monster_gen_button.clicked.connect(self.open_monster_generator)
-        id_operations_frame.addWidget(self.monster_gen_button) 
+        id_operations_frame.addWidget(self.monster_gen_button)      
+     
 
-        self.spell_maker_button = QPushButton("Spell Maker")
+        self.spell_maker_button = QPushButton()
+        self.spell_maker_button.setIcon(QIcon(os.path.join(ICON_PATH, "viewer_icon.png")))
+        self.spell_maker_button.setIconSize(QSize(24, 24))
+        self.spell_maker_button.setToolTip("Spell Maker")
         self.spell_maker_button.clicked.connect(self.open_spell_maker)
-        id_operations_frame.addWidget(self.spell_maker_button)         
+        id_operations_frame.addWidget(self.spell_maker_button)
+
+
+        self.shader_button = QPushButton()
+        self.shader_button.setIcon(QIcon(os.path.join(ICON_PATH, "viewer_icon.png")))
+        self.shader_button.setIconSize(QSize(24, 24))
+        self.shader_button.setToolTip("Shader Editor")
+        self.shader_button.clicked.connect(self.open_shader)
+        id_operations_frame.addWidget(self.shader_button)         
+     
+
+        self.apply_button = QPushButton()
+        self.apply_button.setIcon(QIcon(os.path.join(ICON_PATH, "save.png")))
+        self.apply_button.setIconSize(QSize(24, 24))
+        self.apply_button.setToolTip("Save Flags")
+        self.apply_button.clicked.connect(self.insert_ids)
+        id_operations_frame.addWidget(self.apply_button)
+
+        self.save_button = QPushButton()
+        self.save_button.setIcon(QIcon(os.path.join(ICON_PATH, "save_as.png")))
+        self.save_button.setIconSize(QSize(24, 24))
+        self.save_button.setToolTip("Compile")
+        self.save_button.clicked.connect(self.insert_ids)
+        id_operations_frame.addWidget(self.save_button) 
+
+        self.save_button = QPushButton()
+        self.save_button.setIcon(QIcon(os.path.join(ICON_PATH, "info.png")))
+        self.save_button.setIconSize(QSize(24, 24))
+        self.save_button.setToolTip("About")
+        id_operations_frame.addWidget(self.save_button)         
+                      
 
         bottom_frame.addLayout(id_operations_frame)
-
-        self.apply_button = QPushButton("Save flags")
-        self.apply_button.clicked.connect(self.apply_changes)
-        bottom_frame.addWidget(self.apply_button)
-
-        self.save_button = QPushButton("Compile as...")
-        self.save_button.setStyleSheet("background-color: #00008c;")
-        self.save_button.clicked.connect(self.save_dat_file)
-        bottom_frame.addWidget(self.save_button)
 
         self.status_label = QLabel("")
         self.status_label.setStyleSheet("color: white;")
         bottom_frame.addWidget(self.status_label, 1)
+
 
         main_layout.addLayout(bottom_frame)
 
@@ -1440,11 +1490,15 @@ class DatSprTab(QWidget):
         self.current_page = 0
         
   
+    def open_shader(self):
+        self.shader_win = ShaderEditor(
+        )
+        self.shader_win.show()   
+        
     def open_monster_generator(self):
         self.monster_win = MonsterGeneratorWindow(
         )
         self.monster_win.show()
-        
         
     def open_spell_maker(self):
         self.spell_win = SpellMakerWindow(
@@ -1458,7 +1512,6 @@ class DatSprTab(QWidget):
             )
             return
        
-
         self.looktype_win = LookTypeGeneratorWindow(
             spr_editor=self.spr,
             dat_editor=self.editor,
