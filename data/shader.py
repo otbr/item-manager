@@ -15,7 +15,7 @@ from OpenGL import GL
 from PyQt6.QtGui import QImage, QPixmap
 
 from pathlib import Path
-
+import qdarktheme  
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS_DIR = ROOT / "assets"
 IMAGES_DIR = ASSETS_DIR / "images"
@@ -531,8 +531,13 @@ class ShaderEditor(QMainWindow):
 
         self.tab_widget = QTabWidget()
         
+        self.shader_update_timer = QTimer()
+        self.shader_update_timer.setSingleShot(True)
+        self.shader_update_timer.timeout.connect(self.apply_shader)        
+        
         self.text_edit = QTextEdit()
         self.text_edit.setPlainText(FRAG_DEFAULT)
+        self.text_edit.textChanged.connect(self.schedule_shader_update) 
         self.tab_widget.addTab(self.text_edit, "Editor")
         
 
@@ -559,17 +564,18 @@ class ShaderEditor(QMainWindow):
         assets_layout.addWidget(info_label)
                
         self.test_assets = {
-            "Escudo": str(IMAGES_DIR / "shield.png"),
-            "Espada": str(IMAGES_DIR / "sword.png"),
-            "Machado": str(IMAGES_DIR / "axe.png"),
-            "Armadura": str(IMAGES_DIR / "armor.png"),
-            "Outfit 1": str(IMAGES_DIR / "outfit1.png"),
-            "Outfit 2": str(IMAGES_DIR / "outfit2.png"),
-            "Tile 1": str(IMAGES_DIR / "t2.png"),
-            "Tile 2": str(IMAGES_DIR / "t3.png"),
-            "Paisagem 1": str(IMAGES_DIR / "landscape1.png"),
-            "Paisagem 2": str(IMAGES_DIR / "landscape2.png"),
+            "Escudo": "assets/shield.png",
+            "Espada": "assets/sword.png",
+            "Machado": "assets/axe.png",
+            "Armadura": "assets/armor.png",
+            "Outfit 1": "assets/outfit1.png",
+            "Outfit 2": "assets/outfit2.png",
+            "Tile 1": "assets/t2.png",
+            "Tile 2": "assets/t3.png",
+            "Paisagem 1": "assets/landscape1.png",
+            "Paisagem 2": "assets/landscape2.png",
         }
+        
                     
 
         for asset_name, asset_path in self.test_assets.items():
@@ -583,6 +589,12 @@ class ShaderEditor(QMainWindow):
         self.tab_widget.addTab(assets_widget, "Modelo de Teste")
         
         self.load_shader_files() 
+        
+        
+    def schedule_shader_update(self):
+        """Agenda a atualização do shader após 500ms sem alterações"""
+        self.shader_update_timer.stop()
+        self.shader_update_timer.start(500)         
 
            
     def pickcolor(self):
@@ -630,7 +642,7 @@ class ShaderEditor(QMainWindow):
             full_path = IMAGES_DIR / asset_path
 
         if not full_path.exists():
-            print(f"⚠️ Asset não encontrado: {full_path}")
+            print(f"⚠︝ Asset não encontrado: {full_path}")
             return
 
         self.gl_widget.load_background(str(full_path))
@@ -641,13 +653,13 @@ class ShaderEditor(QMainWindow):
         frags_dir = FRAGS_DIR
 
         if not frags_dir.exists():
-            print(f"⚠️ Pasta 'frags/' não encontrada em: {frags_dir}")
+            print(f"⚠︝ Pasta 'frags/' não encontrada em: {frags_dir}")
             return
 
         shader_files = [f.name for f in frags_dir.glob("*.frag")]
 
         if not shader_files:
-            print("⚠️ Nenhum arquivo .frag encontrado na pasta frags/")
+            print("⚠︝ Nenhum arquivo .frag encontrado na pasta frags/")
             return
 
         for shader_file in sorted(shader_files):
@@ -907,5 +919,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     w = ShaderEditor()
     w.showMaximized()
+    app.setStyleSheet(qdarktheme.load_stylesheet())
     w.show()
     sys.exit(app.exec())
+
