@@ -44,6 +44,7 @@ Warning: Project is still EXPERIMENTAL – expect bugs, freezes and occasional c
 - NPC XML Generator 
 - Monster XML Generator
 - Spell Maker
+- Shader Editor - AI Improve
 
 - Sprite Editor
   - Upscale: 2, 4, 8
