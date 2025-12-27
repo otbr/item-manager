@@ -21,7 +21,7 @@ ICON_PATH = os.path.join(BASE_DIR, "..", "assets", "window")
 
 from obdHandler import ObdHandler
 from PIL import Image, ImageDraw, ImageFilter
-from PyQt6.QtCore import QMimeData, QPoint, Qt, QTimer, pyqtSignal, QSize
+from PyQt6.QtCore import QMimeData, QPoint, Qt, QTimer, pyqtSignal, QSize, QRect
 from PyQt6.QtGui import (
     QColor,
     QContextMenuEvent,
@@ -55,11 +55,13 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QLayout,
     QMenu,
     QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QStyle,
     QSlider,
     QSpinBox,
     QSplitter,
@@ -939,10 +941,112 @@ def pil_to_qpixmap(pil_image):
     return QPixmap.fromImage(qimage)
 
 
+class FlowLayout(QLayout):
+    def __init__(self, parent=None, margin=0, hSpacing=-1, vSpacing=-1):
+        super(FlowLayout, self).__init__(parent)
+        self._hSpace = hSpacing
+        self._vSpace = vSpacing
+        self._items = []
+        self.setContentsMargins(margin, margin, margin, margin)
+
+    def __del__(self):
+        item = self.takeAt(0)
+        while item:
+            item = self.takeAt(0)
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def horizontalSpacing(self):
+        if self._hSpace >= 0:
+            return self._hSpace
+        else:
+            return self.smartSpacing(QStyle.PixelMetric.PM_LayoutHorizontalSpacing)
+
+    def verticalSpacing(self):
+        if self._vSpace >= 0:
+            return self._vSpace
+        else:
+            return self.smartSpacing(QStyle.PixelMetric.PM_LayoutVerticalSpacing)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self.doLayout(QRect(0, 0, width, 0), True)
+
+    def setGeometry(self, rect):
+        super(FlowLayout, self).setGeometry(rect)
+        self.doLayout(rect, False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        size += QSize(2 * self.contentsMargins().top(), 2 * self.contentsMargins().top())
+        return size
+
+    def doLayout(self, rect, testOnly):
+        x = rect.x()
+        y = rect.y()
+        lineHeight = 0
+        spacingX = self.horizontalSpacing()
+        spacingY = self.verticalSpacing()
+
+        for item in self._items:
+            if not item.isEmpty():  # Use isEmpty instead of isHidden/isVisible logic for QLayoutItems
+                wid = item.widget()
+            else:
+                 continue
+            
+            nextX = x + item.sizeHint().width() + spacingX
+            if nextX - spacingX > rect.right() and lineHeight > 0:
+                x = rect.x()
+                y = y + lineHeight + spacingY
+                nextX = x + item.sizeHint().width() + spacingX
+                lineHeight = 0
+
+            if not testOnly:
+                item.setGeometry(QRect(QPoint(x, y), item.sizeHint()))
+
+            x = nextX
+            lineHeight = max(lineHeight, item.sizeHint().height())
+
+        return y + lineHeight - rect.y()
+
+    def smartSpacing(self, pm):
+        parent = self.parent()
+        if not parent:
+            return -1
+        elif parent.isWidgetType():
+            return parent.style().pixelMetric(pm, None, parent)
+        else:
+            return parent.spacing()
+
+
 class ScrollableFrame(QWidget):
 
 
-    def __init__(self, parent=None, label_text=""):
+    def __init__(self, parent=None, label_text="", layout_cls=QVBoxLayout):
         super().__init__(parent)
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(5, 5, 5, 5)
@@ -957,7 +1061,7 @@ class ScrollableFrame(QWidget):
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll_widget = QWidget()
-        self.scroll_layout = QVBoxLayout(self.scroll_widget)
+        self.scroll_layout = layout_cls(self.scroll_widget)
         self.scroll_layout.setContentsMargins(0, 0, 0, 0)
         self.scroll_layout.setSpacing(2)
         self.scroll.setWidget(self.scroll_widget)
@@ -1113,13 +1217,12 @@ class DatSprTab(QWidget):
         main_layout.addLayout(category_layout)
 
         # Main horizontal layout - lists on sides, content in middle
-        main_h_layout = QHBoxLayout()
+        splitter = QSplitter(Qt.Orientation.Horizontal)
 
         # Left: ID list
-        self.ids_list_frame = ScrollableFrame(self, "List ID")
-        self.ids_list_frame.setMinimumWidth(200)
-        self.ids_list_frame.setMaximumWidth(250)
-        main_h_layout.addWidget(self.ids_list_frame)
+        self.ids_list_frame = ScrollableFrame(self, "List ID", layout_cls=FlowLayout)
+        self.ids_list_frame.setMinimumWidth(150)
+        splitter.addWidget(self.ids_list_frame)
 
         # Middle: Main content area
         middle_widget = QWidget()
@@ -1351,7 +1454,8 @@ class DatSprTab(QWidget):
 
         main_grid.addWidget(self.preview_frame, 1, 1)
         middle_layout.addLayout(main_grid)
-        main_h_layout.addWidget(middle_widget, 1)
+        splitter.addWidget(middle_widget)
+        splitter.setStretchFactor(1, 1)
 
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
@@ -1363,8 +1467,8 @@ class DatSprTab(QWidget):
         self.sprite_list_frame.setMaximumWidth(250)
         right_layout.addWidget(self.sprite_list_frame)
 
-        main_h_layout.addWidget(right_widget)
-        main_layout.addLayout(main_h_layout)
+        splitter.addWidget(right_widget)
+        main_layout.addWidget(splitter)
 
         bottom_frame = QHBoxLayout()
         
@@ -2353,6 +2457,7 @@ class DatSprTab(QWidget):
         for item_id in range(current_start_id, end_id):
             item_frame = QFrame()
             item_frame.setFrameShape(QFrame.Shape.NoFrame)
+            item_frame.setFixedSize(115, 85)
             item_layout = QHBoxLayout(item_frame)
             item_layout.setContentsMargins(2, 1, 2, 1)
 
@@ -2416,6 +2521,7 @@ class DatSprTab(QWidget):
             id_label.rightClicked.connect(make_context_handler(item_id))
 
             self.id_buttons[item_id] = id_label
+            
             self.ids_list_frame.scroll_layout.addWidget(item_frame)
 
         nav_frame = QFrame()
@@ -2434,8 +2540,10 @@ class DatSprTab(QWidget):
             next_btn.clicked.connect(self.next_page)
             nav_layout.addWidget(next_btn)
 
+        # Posiciona a navegação abaixo de tudo
         self.ids_list_frame.scroll_layout.addWidget(nav_frame)
-        self.ids_list_frame.scroll_layout.addStretch()
+        # FlowLayout doesn't have setRowStretch, we rely on the layout itself.
+        # self.ids_list_frame.scroll_layout.addStretch() # FlowLayout doesn't usually need explicit stretch for this use case
         self.hide_loading()
 
     def refresh_sprite_list(self):
