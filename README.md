@@ -45,6 +45,8 @@ Warning: Project is still EXPERIMENTAL – expect bugs, freezes and occasional c
 - Monster XML Generator
 - Spell Maker
 - Shader Editor - AI Improve
+- Particle Editor
+- Apng Editor
 
 - Sprite Editor
   - Upscale: 2, 4, 8
